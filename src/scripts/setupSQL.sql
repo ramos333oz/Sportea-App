@@ -25,7 +25,7 @@ USING (TRUE);
 -- Only admins can create/edit courts in production
 CREATE POLICY "Anyone can create courts during development" 
 ON public.courts FOR INSERT 
-USING (TRUE);
+WITH CHECK (TRUE);
 
 CREATE POLICY "Anyone can update courts during development" 
 ON public.courts FOR UPDATE 
@@ -59,7 +59,7 @@ USING (auth.uid() = id);
 
 CREATE POLICY "Users can insert their own profile" 
 ON public.profiles FOR INSERT 
-USING (auth.uid() = id);
+WITH CHECK (auth.uid() = id);
 
 -- Create games table
 CREATE TABLE IF NOT EXISTS public.games (
@@ -93,7 +93,7 @@ USING (TRUE);
 
 CREATE POLICY "Users can create games" 
 ON public.games FOR INSERT 
-USING (auth.uid() = host_id);
+WITH CHECK (auth.uid() = host_id);
 
 CREATE POLICY "Hosts can update their games" 
 ON public.games FOR UPDATE 
@@ -123,7 +123,7 @@ USING (TRUE);
 
 CREATE POLICY "Users can join games" 
 ON public.game_participants FOR INSERT 
-USING (auth.uid() = user_id);
+WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can leave games" 
 ON public.game_participants FOR UPDATE 
@@ -157,7 +157,7 @@ USING (TRUE);
 
 CREATE POLICY "Participants can post in discussions"
 ON public.discussions FOR INSERT
-USING (
+WITH CHECK (
   -- Either the user is the host
   auth.uid() IN (
     SELECT host_id FROM public.games

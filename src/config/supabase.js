@@ -55,7 +55,7 @@ export const SQL_CREATE_TABLES = {
     
     create policy "Users can insert their own profile" 
     on public.profiles for insert 
-    using (auth.uid() = id);
+    with check (auth.uid() = id);
   `,
   
   GAMES: `
@@ -90,7 +90,7 @@ export const SQL_CREATE_TABLES = {
     
     create policy "Users can create games" 
     on public.games for insert 
-    using (auth.uid() = host_id);
+    with check (auth.uid() = host_id);
     
     create policy "Hosts can update their games" 
     on public.games for update 
@@ -121,7 +121,7 @@ export const SQL_CREATE_TABLES = {
     
     create policy "Users can join games" 
     on public.game_participants for insert 
-    using (auth.uid() = user_id);
+    with check (auth.uid() = user_id);
     
     create policy "Users can leave games" 
     on public.game_participants for update 
@@ -161,7 +161,7 @@ export const SQL_CREATE_TABLES = {
     -- Only admins can create/edit courts in production
     create policy "Anyone can create courts during development" 
     on public.courts for insert 
-    using (true);
+    with check (true);
     
     create policy "Anyone can update courts during development" 
     on public.courts for update 
@@ -187,7 +187,7 @@ export const SQL_CREATE_TABLES = {
     
     create policy "Participants can post in discussions"
     on public.discussions for insert
-    using (
+    with check (
       -- Either the user is the host
       auth.uid() in (
         select host_id from public.games
