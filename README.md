@@ -24,10 +24,11 @@ Sportea is a mobile application designed to connect sports enthusiasts, facilita
 
 ### Prerequisites
 
-- Node.js (v14 or newer)
+- Node.js (v16 or newer)
 - npm or yarn
 - Expo CLI
 - Android Studio (for Android development) or Xcode (for iOS development)
+- Supabase account
 
 ### Installation
 
@@ -42,68 +43,285 @@ cd Sportea-App
 npm install
 ```
 
-3. Create a `.env` file in the root directory with your Supabase credentials:
+3. Install required Babel plugin (critical for module resolution):
+```bash
+npm install --save-dev babel-plugin-module-resolver
+```
+
+4. Make sure you have the correct versions of these critical packages:
+```bash
+npm install @react-native-async-storage/async-storage@1.21.0 @react-native-community/datetimepicker@7.7.0 react-native@0.73.6
+```
+
+5. Create a `.env` file in the root directory with your Supabase credentials:
 ```
 EXPO_PUBLIC_SUPABASE_URL=your_supabase_url
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-4. Start the development server:
-```bash
-npx expo start
-```
+6. Ensure a valid logo exists for the app by creating a PNG file at `assets/images/logo-placeholder.png`
 
-5. Run on Android or iOS:
-```bash
-# For Android
-npx expo start --android
-
-# For iOS
-npx expo start --ios
-```
-
-## 📋 Database Setup
-
-Sportea uses Supabase for the backend. You'll need to set up the following:
-
-1. Create a Supabase project
-2. Set up authentication with email confirmation
-3. Create the necessary tables:
-   - profiles
-   - games
-   - teams
-   - participants
-   - team_members
-4. Set up Row Level Security (RLS) policies to control data access
-
-## 🧪 Development Notes
-
-- Use `--clear` flag when running Expo to clear cache if encountering build issues:
+7. Start the development server:
 ```bash
 npx expo start --clear
 ```
 
-- Make sure to install the correct dependencies for Expo compatibility:
+8. Run on Android or iOS:
 ```bash
-npm install @react-native-async-storage/async-storage@1.21.0 @react-native-community/datetimepicker@7.7.0 react-native@0.73.6
+# For Android
+npx expo start --android --clear
+
+# For iOS
+npx expo start --ios --clear
 ```
 
-## 📱 Deep Linking Configuration
+## 📊 Detailed Database Setup
 
-For email confirmation and other deep linking features, ensure the following:
+### Create a Supabase Project
 
-1. Set up your app scheme in `app.json`:
+1. Go to [Supabase](https://supabase.com/) and create a new project
+2. Note your project URL and anon key (public API key) for your `.env` file
+
+### Authentication Setup
+
+1. In the Supabase dashboard, go to **Authentication** → **Providers**
+2. Ensure "Email" is enabled and "Confirm Email" is checked
+3. Configure Site URL and Redirect URLs (critical for email confirmation):
+   - **Site URL**: `http://localhost:8083` (for development)
+   - **Redirect URLs**: Add both `http://localhost:8083` and `sportea://`
+
+### Database Schema
+
+Create the following tables with these fields:
+
+#### profiles
+
+```sql
+CREATE TABLE profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  updated_at TIMESTAMP WITH TIME ZONE,
+  username TEXT UNIQUE,
+  full_name TEXT,
+  avatar_url TEXT,
+  bio TEXT,
+  location TEXT,
+  sports TEXT[],
+  skill_level INTEGER DEFAULT 1
+);
+```
+
+#### games
+
+```sql
+CREATE TABLE games (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  creator_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  sport_type TEXT NOT NULL,
+  location TEXT NOT NULL,
+  latitude NUMERIC,
+  longitude NUMERIC,
+  start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+  end_time TIMESTAMP WITH TIME ZONE NOT NULL,
+  max_participants INTEGER DEFAULT 0,
+  skill_level INTEGER DEFAULT 1,
+  is_private BOOLEAN DEFAULT FALSE,
+  status TEXT DEFAULT 'active'
+);
+```
+
+### Row Level Security (RLS) Policies
+
+Set up proper RLS policies to ensure data security. Here are the essential policies:
+
+#### profiles table
+
+```sql
+-- Enable RLS
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- Allow users to read any profile
+CREATE POLICY "Anyone can view profiles"
+  ON profiles FOR SELECT
+  USING (true);
+
+-- Allow users to insert their own profile
+CREATE POLICY "Users can insert their own profile"
+  ON profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
+-- Allow users to update their own profile
+CREATE POLICY "Users can update their own profile"
+  ON profiles FOR UPDATE
+  USING (auth.uid() = id);
+```
+
+#### games table
+
+```sql
+-- Enable RLS
+ALTER TABLE games ENABLE ROW LEVEL SECURITY;
+
+-- Anyone can view active games
+CREATE POLICY "Anyone can view active games"
+  ON games FOR SELECT
+  USING (status = 'active');
+
+-- Only creator can insert a game
+CREATE POLICY "Authenticated users can create games"
+  ON games FOR INSERT
+  WITH CHECK (auth.uid() = creator_id);
+
+-- Only creator can update a game
+CREATE POLICY "Creators can update their games"
+  ON games FOR UPDATE
+  USING (auth.uid() = creator_id);
+```
+
+## 🔗 Deep Linking Configuration
+
+### App Configuration
+
+1. Ensure your `app.json` has the proper configuration:
+
 ```json
 {
   "expo": {
-    "scheme": "sportea"
+    "name": "Sportea",
+    "slug": "sportea",
+    "scheme": "sportea",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
   }
 }
 ```
 
-2. Configure Supabase site URL and redirect URLs:
-   - Site URL: http://localhost:8083 (for development)
-   - Redirect URLs: Include both http://localhost:8083 and sportea://
+### Setting Up Email Confirmation Screen
+
+The app needs a screen to handle email confirmation links. Ensure you have:
+
+1. An `EmailConfirmationScreen.tsx` in the `src/screens` directory
+2. The screen properly handles the email confirmation token from the URL
+3. The screen is registered in the navigation stack in `AuthNavigator.tsx`
+
+## 🛠️ Babel Configuration
+
+Make sure your `babel.config.js` is set up correctly:
+
+```javascript
+module.exports = function(api) {
+  api.cache(true);
+  return {
+    presets: ['babel-preset-expo'],
+    plugins: [
+      'react-native-reanimated/plugin',
+      [
+        'module-resolver',
+        {
+          alias: {
+            '@components': './src/components',
+            '@screens': './src/screens',
+            '@navigation': './src/navigation',
+            '@hooks': './src/hooks',
+            '@utils': './src/utils',
+            '@services': './src/services',
+            '@constants': './src/constants',
+            '@types': './src/types',
+            '@assets': './assets',
+          },
+        },
+      ],
+    ],
+  };
+};
+```
+
+## 🐞 Troubleshooting Common Issues
+
+### Email Confirmation Issues
+
+- Make sure Supabase redirect URLs include both `http://localhost:8083` and `sportea://`
+- Ensure the email confirmation URL properly launches your app with deep linking
+- Test deep links on the device/emulator where the app is installed, not on a computer browser
+
+### Module Resolution Errors
+
+If you encounter errors related to module resolution:
+
+```
+Error: Cannot find module 'babel-plugin-module-resolver'
+```
+
+Run:
+```bash
+npm install --save-dev babel-plugin-module-resolver
+```
+
+### BOM Character Issues in Files
+
+If you see errors like `Unexpected character ''`:
+
+1. Delete the corrupted file:
+```bash
+rm src/screens/EmailConfirmationScreen.tsx
+```
+
+2. Create a new file with proper encoding:
+```bash
+# On Windows PowerShell:
+New-Item -Path src/screens/EmailConfirmationScreen.tsx -ItemType File -Force
+```
+
+3. Edit the file to add the correct content.
+
+### Empty File Errors
+
+If you see errors like `Error: assets\images\logo-placeholder.png: Empty file`:
+
+1. Make sure the file exists and has content:
+```bash
+# Create the directory if it doesn't exist
+mkdir -p assets/images
+
+# Create a placeholder logo (on Windows PowerShell)
+Copy-Item path/to/existing/image.png assets/images/logo-placeholder.png
+```
+
+### Metro Bundler Cache Issues
+
+If you experience strange bundling errors:
+
+```bash
+# Clear the cache and restart
+npx expo start --clear
+```
 
 ## 🤝 Contributing
 
