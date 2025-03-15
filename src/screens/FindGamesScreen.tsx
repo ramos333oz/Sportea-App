@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, ScrollView, TouchableOpacity, FlatList } from 'react-native';
-import { Text, Card, Button, Searchbar, Chip, Avatar, Divider, Title, Paragraph } from 'react-native-paper';
+import { StyleSheet, View, ScrollView, TouchableOpacity, FlatList, RefreshControl } from 'react-native';
+import { Text, Card, Button, Searchbar, Chip, Avatar, Divider, Title, Paragraph, ActivityIndicator } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { MainTabParamList } from '../navigation/MainNavigator';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AppStackParamList } from '../navigation/AppNavigator';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants/theme';
+import SporteaMap from '../components/MapView';
+import { gameUtils } from '../utils/supabaseUtils';
+import { calculateDistance } from '../utils/mapUtils';
 
 type FindGamesScreenNavigationProp = BottomTabNavigationProp<MainTabParamList, 'FindGames'>;
 type FindGamesNavigationProp = StackNavigationProp<AppStackParamList>;
@@ -98,7 +101,12 @@ const FindGamesScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSport, setSelectedSport] = useState('all');
   const [selectedSkillLevel, setSelectedSkillLevel] = useState('all');
+  const [showMap, setShowMap] = useState(false);
+  const [games, setGames] = useState([]);
   const [filteredGames, setFilteredGames] = useState(mockGames);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [userLocation, setUserLocation] = useState({ latitude: 37.7749, longitude: -122.4194 });
 
   // Get sport icon based on sport type
   const getSportIcon = (sportType: string) => {
@@ -118,38 +126,116 @@ const FindGamesScreen = () => {
     }
   };
 
-  // Filter games based on search and filters
-  const filterGames = () => {
-    let filtered = mockGames;
+  // Function to fetch games from the backend
+  const fetchGames = async () => {
+    try {
+      setLoading(true);
+      
+      // Build filters object based on selections
+      const filters = {};
+      if (selectedSport) {
+        filters.sport = selectedSport.toLowerCase();
+      }
+      if (selectedSkillLevel && selectedSkillLevel !== 'all') {
+        filters.skillLevel = selectedSkillLevel.toLowerCase();
+      }
+      
+      // Use our Supabase utility to get games
+      const { games: fetchedGames, error } = await gameUtils.getGames(filters);
+      
+      if (error) {
+        console.error('Error fetching games:', error);
+        return;
+      }
+      
+      // Calculate distance for each game if location data is available
+      const gamesWithDistance = fetchedGames.map(game => {
+        let distance = null;
+        
+        if (game.location && game.location.latitude && game.location.longitude) {
+          distance = calculateDistance(
+            userLocation.latitude,
+            userLocation.longitude,
+            game.location.latitude,
+            game.location.longitude
+          );
+        }
+        
+        // Format game for display
+        return {
+          ...game,
+          distance,
+          // Format participants count
+          participantsCount: game.participants ? game.participants.length : 0,
+        };
+      });
+      
+      setGames(gamesWithDistance);
+      filterGames(gamesWithDistance, searchQuery);
+      
+    } catch (error) {
+      console.error('Error in fetchGames:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
-    // Filter by search query
-    if (searchQuery) {
-      filtered = filtered.filter(game => 
-        game.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        game.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        game.host.toLowerCase().includes(searchQuery.toLowerCase())
+  // Initial fetch
+  useEffect(() => {
+    fetchGames();
+  }, []);
+
+  // Filter when selections change
+  useEffect(() => {
+    filterGames(games, searchQuery);
+  }, [selectedSport, selectedSkillLevel, searchQuery]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchGames();
+  };
+
+  const filterGames = (gamesData, query) => {
+    if (!gamesData) return;
+    
+    let filtered = [...gamesData];
+    
+    // Apply search query filter
+    if (query) {
+      const lowercasedQuery = query.toLowerCase();
+      filtered = filtered.filter(
+        game => game.title.toLowerCase().includes(lowercasedQuery) || 
+               (game.description && game.description.toLowerCase().includes(lowercasedQuery))
       );
     }
-
-    // Filter by sport
-    if (selectedSport !== 'all') {
-      filtered = filtered.filter(game => game.sport === selectedSport);
-    }
-
-    // Filter by skill level
-    if (selectedSkillLevel !== 'all') {
-      filtered = filtered.filter(game => 
-        game.skillLevel === selectedSkillLevel
-      );
-    }
-
+    
     setFilteredGames(filtered);
   };
 
-  // Update filters when search or filter changes
-  useEffect(() => {
-    filterGames();
-  }, [searchQuery, selectedSport, selectedSkillLevel]);
+  const onChangeSearch = query => {
+    setSearchQuery(query);
+  };
+
+  const toggleSportFilter = sport => {
+    if (selectedSport === sport) {
+      setSelectedSport('');
+    } else {
+      setSelectedSport(sport);
+    }
+  };
+
+  const toggleSkillFilter = skill => {
+    if (selectedSkillLevel === skill) {
+      setSelectedSkillLevel('');
+    } else {
+      setSelectedSkillLevel(skill);
+    }
+  };
+
+  const toggleMapView = () => {
+    setShowMap(!showMap);
+  };
 
   // Format date for display
   const formatDate = (dateString) => {
@@ -216,12 +302,29 @@ const FindGamesScreen = () => {
     </TouchableOpacity>
   );
 
+  const renderGameMarkers = () => {
+    if (!filteredGames) return [];
+    
+    return filteredGames.map(game => {
+      if (game.location && game.location.latitude && game.location.longitude) {
+        return {
+          id: game.id,
+          latitude: game.location.latitude,
+          longitude: game.location.longitude,
+          title: game.title,
+          description: `${game.sport} - ${game.skillLevel || 'All levels'}`
+        };
+      }
+      return null;
+    }).filter(marker => marker !== null);
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Searchbar
           placeholder="Search games, locations..."
-          onChangeText={setSearchQuery}
+          onChangeText={onChangeSearch}
           value={searchQuery}
           style={styles.searchBar}
           iconColor={COLORS.primary}
@@ -239,7 +342,7 @@ const FindGamesScreen = () => {
             <Chip
               key={sport.id}
               selected={selectedSport === sport.id}
-              onPress={() => setSelectedSport(sport.id)}
+              onPress={() => toggleSportFilter(sport.id)}
               style={[
                 styles.filterChip,
                 selectedSport === sport.id && styles.selectedFilterChip
@@ -265,7 +368,7 @@ const FindGamesScreen = () => {
             <Chip
               key={level.id}
               selected={selectedSkillLevel === level.id}
-              onPress={() => setSelectedSkillLevel(level.id)}
+              onPress={() => toggleSkillFilter(level.id)}
               style={[
                 styles.filterChip,
                 selectedSkillLevel === level.id && styles.selectedFilterChip
@@ -281,42 +384,62 @@ const FindGamesScreen = () => {
         </ScrollView>
       </View>
 
-      <View style={styles.resultContainer}>
-        <View style={styles.resultHeader}>
-          <Text style={styles.resultCount}>
-            {filteredGames.length} {filteredGames.length === 1 ? 'game' : 'games'} found
-          </Text>
-          <TouchableOpacity>
-            <Text style={styles.sortText}>Sort by: Date ↓</Text>
-          </TouchableOpacity>
-        </View>
-
-        {filteredGames.length > 0 ? (
-          <FlatList
-            data={filteredGames}
-            renderItem={renderGameItem}
-            keyExtractor={item => item.id}
-            contentContainerStyle={styles.gamesList}
-            showsVerticalScrollIndicator={false}
-          />
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No games found</Text>
-            <Text style={styles.emptySubtext}>Try adjusting your filters</Text>
-            <Button 
-              mode="contained" 
-              onPress={() => {
-                setSearchQuery('');
-                setSelectedSport('all');
-                setSelectedSkillLevel('all');
-              }}
-              style={styles.resetFiltersButton}
-            >
-              Reset Filters
-            </Button>
-          </View>
-        )}
+      <View style={styles.viewToggleContainer}>
+        <Button 
+          mode={showMap ? "outlined" : "contained"} 
+          onPress={toggleMapView}
+          style={styles.viewToggleButton}
+        >
+          List View
+        </Button>
+        <Button 
+          mode={showMap ? "contained" : "outlined"} 
+          onPress={toggleMapView}
+          style={styles.viewToggleButton}
+        >
+          Map View
+        </Button>
       </View>
+
+      <Divider style={styles.divider} />
+
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading games...</Text>
+        </View>
+      ) : showMap ? (
+        <View style={styles.mapContainer}>
+          <SporteaMap
+            style={styles.map}
+            markers={renderGameMarkers()}
+            onMarkerPress={(marker) => navigateToGameDetails(marker.id)}
+          />
+        </View>
+      ) : (
+        <FlatList
+          data={filteredGames}
+          renderItem={renderGameItem}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.gamesList}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[COLORS.primary]}
+            />
+          }
+          ListEmptyComponent={() => (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No games found matching your criteria</Text>
+              <Button mode="contained" onPress={onRefresh}>
+                Refresh
+              </Button>
+            </View>
+          )}
+        />
+      )}
     </View>
   );
 };
@@ -362,23 +485,17 @@ const styles = StyleSheet.create({
   selectedFilterChipText: {
     color: COLORS.background,
   },
-  resultContainer: {
-    flex: 1,
-    padding: SPACING.md,
-  },
-  resultHeader: {
+  viewToggleContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
+    justifyContent: 'center',
+    marginBottom: SPACING.md,
   },
-  resultCount: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text,
+  viewToggleButton: {
+    flex: 1,
+    marginHorizontal: SPACING.sm,
   },
-  sortText: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.primary,
+  divider: {
+    marginBottom: SPACING.md,
   },
   gamesList: {
     paddingBottom: SPACING.xl,
@@ -410,9 +527,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     height: 24,
   },
-  divider: {
-    marginVertical: SPACING.xs,
-  },
   cardDetails: {
     marginTop: SPACING.sm,
   },
@@ -438,6 +552,23 @@ const styles = StyleSheet.create({
   joinButton: {
     backgroundColor: COLORS.primary,
   },
+  mapContainer: {
+    flex: 1,
+    borderRadius: BORDER_RADIUS.md,
+    overflow: 'hidden',
+  },
+  map: {
+    height: '100%',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: SPACING.md,
+    color: COLORS.primary,
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -448,14 +579,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.lg,
     fontWeight: 'bold',
     color: COLORS.disabled,
-  },
-  emptySubtext: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.disabled,
-    marginTop: SPACING.sm,
-  },
-  resetFiltersButton: {
-    backgroundColor: COLORS.primary,
   },
 });
 
