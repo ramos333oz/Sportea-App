@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Image, TouchableOpacity } from 'react-native';
-import { Text, Avatar, Button, Card, List, Divider, FAB } from 'react-native-paper';
+import React, { useState, useEffect, useContext } from 'react';
+import { View, StyleSheet, ScrollView, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { Text, Avatar, Button, Card, List, Divider, FAB, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants/theme';
+import AuthContext from '../contexts/AuthContext';
+import { getUserProfile, getUserStats, getUserGames } from '../utils/profileUtils';
+import { supabase } from '../services/supabase';
+import { TABLES } from '../config/supabase';
 
+// Keep mock data as fallback
 const mockUser = {
   id: '1',
   name: 'John Smith',
@@ -34,8 +39,8 @@ const mockUser = {
   }
 };
 
-// Mock upcoming games
-const upcomingGames = [
+// Mock upcoming games and activity as fallback
+const mockUpcomingGames = [
   {
     id: '1',
     title: 'Basketball 3v3',
@@ -56,8 +61,7 @@ const upcomingGames = [
   }
 ];
 
-// Mock recent activity
-const recentActivity = [
+const mockRecentActivity = [
   {
     id: '1',
     type: 'joined',
@@ -80,7 +84,105 @@ const recentActivity = [
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
+  const { user } = useContext(AuthContext);
   const [activeTab, setActiveTab] = useState('games');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [profile, setProfile] = useState<any>(null);
+  const [stats, setStats] = useState<any>(null);
+  const [upcomingGames, setUpcomingGames] = useState<any[]>([]);
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  
+  useEffect(() => {
+    if (user) {
+      loadUserData();
+    } else {
+      // Fallback to mock data if no user
+      setProfile(mockUser);
+      setUpcomingGames(mockUpcomingGames);
+      setRecentActivity(mockRecentActivity);
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  const loadUserData = async () => {
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      // Get user profile
+      const { data: profileData, error: profileError } = await getUserProfile(user.id);
+      
+      if (profileError) {
+        throw profileError;
+      }
+      
+      if (profileData) {
+        setProfile(profileData);
+      }
+      
+      // Get user stats
+      const { data: statsData, error: statsError } = await getUserStats(user.id);
+      
+      if (statsError) {
+        throw statsError;
+      }
+      
+      if (statsData) {
+        setStats(statsData);
+      }
+      
+      // Get user games
+      const { data: gamesData, error: gamesError } = await getUserGames(user.id);
+      
+      if (gamesError) {
+        throw gamesError;
+      }
+      
+      if (gamesData) {
+        // Filter for upcoming games
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const upcoming = gamesData.all
+          .filter((game: any) => new Date(game.date) >= today)
+          .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+          .slice(0, 5); // Get only the nearest 5 games
+        
+        setUpcomingGames(upcoming);
+        
+        // Create activity from games
+        const activity = [
+          // Games hosted by user
+          ...gamesData.hosted.map((game: any) => ({
+            id: `hosted-${game.id}`,
+            type: 'hosted',
+            gameTitle: game.title,
+            timestamp: game.created_at,
+            gameId: game.id
+          })),
+          
+          // Games joined by user
+          ...gamesData.joined.map((game: any) => ({
+            id: `joined-${game.id}`,
+            type: 'joined',
+            gameTitle: game.title,
+            timestamp: game.created_at,
+            gameId: game.id
+          }))
+        ]
+        .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 10); // Get most recent 10 activities
+        
+        setRecentActivity(activity);
+      }
+    } catch (err: any) {
+      console.error('Error loading user data:', err);
+      setError(err.message || 'Failed to load user data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
   
   // Format date for display
   const formatDate = (dateString: string) => {
@@ -112,65 +214,82 @@ const ProfileScreen = () => {
     }
   };
   
-  const renderProfileHeader = () => (
-    <View style={styles.profileHeader}>
-      <View style={styles.profileImageContainer}>
-        <Avatar.Image 
-          source={{ uri: mockUser.profileImage }} 
-          size={100} 
-          style={styles.profileImage}
-        />
-        <TouchableOpacity style={styles.editProfileImageButton}>
-          <MaterialCommunityIcons name="camera" size={16} color={COLORS.background} />
-        </TouchableOpacity>
-      </View>
-      
-      <View style={styles.profileInfo}>
-        <Text style={styles.name}>{mockUser.name}</Text>
-        <Text style={styles.username}>{mockUser.username}</Text>
-        <View style={styles.locationContainer}>
-          <MaterialCommunityIcons name="map-marker" size={16} color={COLORS.disabled} />
-          <Text style={styles.location}>{mockUser.location}</Text>
+  const renderProfileHeader = () => {
+    if (!profile) return null;
+    
+    const displayName = profile.full_name || profile.username || 'User';
+    const displayUsername = profile.username ? `@${profile.username}` : '';
+    
+    return (
+      <View style={styles.profileHeader}>
+        <View style={styles.profileImageContainer}>
+          <Avatar.Image 
+            source={{ uri: profile.avatar_url || 'https://via.placeholder.com/150' }} 
+            size={100} 
+            style={styles.profileImage}
+          />
+          <TouchableOpacity style={styles.editProfileImageButton}>
+            <MaterialCommunityIcons name="camera" size={16} color={COLORS.background} />
+          </TouchableOpacity>
         </View>
         
-        <View style={styles.followContainer}>
-          <View style={styles.followItem}>
-            <Text style={styles.followCount}>{mockUser.followers}</Text>
-            <Text style={styles.followLabel}>Followers</Text>
-          </View>
-          <View style={styles.followItem}>
-            <Text style={styles.followCount}>{mockUser.following}</Text>
-            <Text style={styles.followLabel}>Following</Text>
+        <View style={styles.profileInfo}>
+          <Text style={styles.name}>{displayName}</Text>
+          <Text style={styles.username}>{displayUsername}</Text>
+          {profile.location && (
+            <View style={styles.locationContainer}>
+              <MaterialCommunityIcons name="map-marker" size={16} color={COLORS.disabled} />
+              <Text style={styles.location}>{profile.location}</Text>
+            </View>
+          )}
+          
+          <View style={styles.followContainer}>
+            <View style={styles.followItem}>
+              <Text style={styles.followCount}>{profile.followers_count || 0}</Text>
+              <Text style={styles.followLabel}>Followers</Text>
+            </View>
+            <View style={styles.followItem}>
+              <Text style={styles.followCount}>{profile.following_count || 0}</Text>
+              <Text style={styles.followLabel}>Following</Text>
+            </View>
           </View>
         </View>
       </View>
-    </View>
-  );
+    );
+  };
   
-  const renderBio = () => (
-    <View style={styles.bioContainer}>
-      <Text style={styles.bioText}>{mockUser.bio}</Text>
-    </View>
-  );
+  const renderBio = () => {
+    if (!profile) return null;
+    
+    return (
+      <View style={styles.bioContainer}>
+        <Text style={styles.bioText}>{profile.bio || 'No bio yet'}</Text>
+      </View>
+    );
+  };
   
-  const renderStats = () => (
-    <View style={styles.statsContainer}>
-      <View style={styles.statItem}>
-        <Text style={styles.statValue}>{mockUser.stats.gamesPlayed}</Text>
-        <Text style={styles.statLabel}>Games Played</Text>
+  const renderStats = () => {
+    if (!stats) return null;
+    
+    return (
+      <View style={styles.statsContainer}>
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{stats.gamesPlayed}</Text>
+          <Text style={styles.statLabel}>Games Played</Text>
+        </View>
+        <View style={styles.statDivider} />
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{stats.gamesHosted}</Text>
+          <Text style={styles.statLabel}>Games Hosted</Text>
+        </View>
+        <View style={styles.statDivider} />
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{stats.sportsPlayed?.length || 0}</Text>
+          <Text style={styles.statLabel}>Sports</Text>
+        </View>
       </View>
-      <View style={styles.statDivider} />
-      <View style={styles.statItem}>
-        <Text style={styles.statValue}>{mockUser.stats.gamesHosted}</Text>
-        <Text style={styles.statLabel}>Games Hosted</Text>
-      </View>
-      <View style={styles.statDivider} />
-      <View style={styles.statItem}>
-        <Text style={styles.statValue}>{mockUser.stats.sportsPlayed.length}</Text>
-        <Text style={styles.statLabel}>Sports</Text>
-      </View>
-    </View>
-  );
+    );
+  };
   
   const renderTabSelector = () => (
     <View style={styles.tabContainer}>
@@ -286,11 +405,11 @@ const ProfileScreen = () => {
         <Card.Content>
           <Text style={styles.preferencesTitle}>Preferred Sports</Text>
           <View style={styles.preferencesChipsContainer}>
-            {mockUser.preferences.preferredSports.map(sport => (
+            {profile.preferences?.preferredSports.map(sport => (
               <View key={sport} style={styles.preferencesChip}>
                 <Text style={styles.preferencesChipText}>{sport}</Text>
                 <Text style={styles.skillLevelText}>
-                  {mockUser.preferences.skillLevels[sport as keyof typeof mockUser.preferences.skillLevels]}
+                  {profile.preferences.skillLevels[sport as keyof typeof profile.preferences.skillLevels]}
                 </Text>
               </View>
             ))}
@@ -299,7 +418,7 @@ const ProfileScreen = () => {
           <Divider style={styles.preferenceDivider} />
           
           <Text style={styles.preferencesTitle}>Availability</Text>
-          <Text style={styles.preferencesText}>{mockUser.preferences.availability}</Text>
+          <Text style={styles.preferencesText}>{profile.preferences?.availability}</Text>
         </Card.Content>
       </Card>
       
@@ -312,6 +431,15 @@ const ProfileScreen = () => {
       </Button>
     </View>
   );
+  
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading profile...</Text>
+      </View>
+    );
+  }
   
   return (
     <View style={styles.container}>
@@ -332,6 +460,17 @@ const ProfileScreen = () => {
         color={COLORS.background}
         onPress={() => console.log('Settings')}
       />
+      
+      <Snackbar
+        visible={!!error}
+        onDismiss={() => setError('')}
+        action={{
+          label: 'Retry',
+          onPress: loadUserData,
+        }}
+      >
+        {error}
+      </Snackbar>
     </View>
   );
 };
@@ -604,6 +743,15 @@ const styles = StyleSheet.create({
     right: 16,
     bottom: 16,
     backgroundColor: COLORS.primary,
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: SPACING.md,
+    fontSize: FONT_SIZES.lg,
+    color: COLORS.disabled,
   },
 });
 

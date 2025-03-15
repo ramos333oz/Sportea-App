@@ -87,7 +87,14 @@ const RegisterScreen = () => {
     setErrorMessage('');
 
     try {
-      const { data, error } = await signUp(email, password);
+      // Create userData object with profile information
+      const userData = {
+        username: fullName.split(' ')[0].toLowerCase() + Math.floor(Math.random() * 1000), // Simple username generation
+        full_name: fullName,
+        // You can add more fields here if needed
+      };
+
+      const { data, error } = await signUp(email, password, userData);
       
       if (error) {
         setErrorMessage(error.message);
@@ -95,8 +102,8 @@ const RegisterScreen = () => {
         setErrorMessage('Registration failed. Please try again.');
       } else {
         // Registration successful
-        // Note: Normally we would create a profile with the additional details in Supabase here
-        // For now we'll just show a success message and navigate back to login
+        // Note: Now we automatically create a profile in Supabase
+        // Show a success message and navigate back to login
         navigation.navigate('Login');
       }
     } catch (error) {
