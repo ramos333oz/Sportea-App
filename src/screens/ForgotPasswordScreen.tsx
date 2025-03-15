@@ -16,42 +16,41 @@ const ForgotPasswordScreen = () => {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const handleResetPassword = async () => {
-    if (!email.trim()) {
+    if (!email) {
       setMessage({ text: 'Please enter your email address', type: 'error' });
       return;
     }
 
-    // Check if the email is from the university domain
-    if (!email.endsWith('@student.uitm.edu.my')) {
-      setMessage({ text: 'Please use your university student email', type: 'error' });
-      return;
-    }
-
-    setLoading(true);
-    setMessage(null);
-
     try {
+      setLoading(true);
+      setMessage(null);
+
+      // Call Supabase to send a password reset email
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'sportea://reset-password', // This would be your app's deep link in a real app
+        redirectTo: 'sportea://auth/reset-password',
       });
 
       if (error) {
         setMessage({ text: error.message, type: 'error' });
       } else {
         setMessage({ 
-          text: 'Password reset instructions sent to your email', 
+          text: 'Password reset instructions have been sent to your email', 
           type: 'success' 
         });
       }
     } catch (error) {
+      console.error('Error in password reset:', error);
       setMessage({ 
         text: 'An unexpected error occurred. Please try again.', 
         type: 'error' 
       });
-      console.error(error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const navigateToLogin = () => {
+    navigation.navigate('Login' as never);
   };
 
   return (
@@ -74,23 +73,35 @@ const ForgotPasswordScreen = () => {
           />
         </View>
 
-        <Text style={styles.title}>Forgot Password</Text>
+        <Text style={styles.title}>Reset Password</Text>
         <Text style={styles.subtitle}>
-          Enter your university email and we'll send you instructions to reset your password.
+          Enter your email address and we'll send you instructions to reset your password.
         </Text>
 
         <TextInput
           style={styles.input}
-          label="University Email"
+          label="Email"
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
+          autoComplete="email"
           keyboardType="email-address"
           left={<TextInput.Icon icon="email" />}
           mode="outlined"
           outlineColor={COLORS.border}
           activeOutlineColor={COLORS.primary}
         />
+
+        {message && (
+          <Text 
+            style={[
+              styles.message, 
+              message.type === 'success' ? styles.successText : styles.errorText
+            ]}
+          >
+            {message.text}
+          </Text>
+        )}
 
         <Button
           mode="contained"
@@ -100,9 +111,13 @@ const ForgotPasswordScreen = () => {
           loading={loading}
           disabled={loading}
         >
-          Send Reset Instructions
+          Reset Password
         </Button>
       </View>
+
+      <TouchableOpacity onPress={navigateToLogin} style={styles.linkContainer}>
+        <Text style={styles.link}>Back to Login</Text>
+      </TouchableOpacity>
 
       <Snackbar
         visible={!!message}
@@ -180,6 +195,24 @@ const styles = StyleSheet.create({
   },
   errorSnackbar: {
     backgroundColor: COLORS.error,
+  },
+  message: {
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  successText: {
+    color: COLORS.success,
+  },
+  errorText: {
+    color: COLORS.error,
+  },
+  linkContainer: {
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  link: {
+    color: COLORS.primary,
+    fontSize: 16,
   },
 });
 

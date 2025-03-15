@@ -1,18 +1,46 @@
 import { createClient } from '@supabase/supabase-js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import 'react-native-url-polyfill/auto';
+import { Platform } from 'react-native';
+
+// Import URL polyfill only for non-web platforms
+if (Platform.OS !== 'web') {
+  require('react-native-url-polyfill/auto');
+}
+
+// Use localStorage for web, otherwise use AsyncStorage
+let AsyncStorage;
+if (Platform.OS !== 'web') {
+  AsyncStorage = require('@react-native-async-storage/async-storage').default;
+}
 
 // Supabase configuration
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://vzigidvhgyvketpnruqa.supabase.co';
 const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6aWdpZHZoZ3l2a2V0cG5ydXFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIwMjcwMjUsImV4cCI6MjA1NzYwMzAyNX0.ECEkZ73U45K-DGKpScPlx-xfgmK_Ss5cgo3HhW_1Ih8';
 
+// Storage adapter
+const storageAdapter = Platform.OS === 'web' 
+  ? {
+      getItem: (key) => {
+        const value = localStorage.getItem(key);
+        return Promise.resolve(value);
+      },
+      setItem: (key, value) => {
+        localStorage.setItem(key, value);
+        return Promise.resolve(true);
+      },
+      removeItem: (key) => {
+        localStorage.removeItem(key);
+        return Promise.resolve();
+      }
+    } 
+  : AsyncStorage;
+
 // Initialize Supabase client
 export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
-    storage: AsyncStorage,
+    storage: storageAdapter,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    detectSessionInUrl: Platform.OS === 'web',
   },
 });
 
@@ -53,9 +81,16 @@ export const SQL_CREATE_TABLES = {
     on public.profiles for update 
     using (auth.uid() = id);
     
-    create policy "Users can insert their own profile" 
+    -- Drop the existing insert policy
+    drop policy if exists "Users can insert their own profile" on public.profiles;
+    
+    -- Create a new policy that works for both authenticated and service role inserts
+    create policy "Allow profile creation" 
     on public.profiles for insert 
-    with check (auth.uid() = id);
+    with check (
+      auth.uid() = id OR -- Allows authenticated users to create their own profile
+      (auth.role() = 'service_role') -- Allows the service role to create profiles
+    );
   `,
   
   GAMES: `

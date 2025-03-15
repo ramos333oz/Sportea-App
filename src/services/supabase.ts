@@ -1,10 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
-import * as SecureStore from 'expo-secure-store';
-import 'react-native-url-polyfill/auto';
+import SecureStore from '../utils/secureStoreAdapter';
+import { Platform } from 'react-native';
+
+// Import URL polyfill only for non-web platforms
+if (Platform.OS !== 'web') {
+  require('react-native-url-polyfill/auto');
+}
 
 // Get credentials from environment variables
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://vzigidvhgyvketpnruqa.supabase.co';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6aWdpZHZoZ3l2a2V0cG5ydXFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIwMjcwMjUsImV4cCI6MjA1NzYwMzAyNX0.ECEkZ73U45K-DGKpScPlx-xfgmK_Ss5cgo3HhW_1Ih8';
+const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6aWdpZHZoZ3l2a2V0cG5ydXFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIwMjcwMjUsImV4cCI6MjA1NzYwMzAyNX0.ECEkZ73U45K-DGKpScPlx-xfgmK_Ss5cgo3HhW_1Ih8';
 
 // Custom storage for React Native
 const ExpoSecureStoreAdapter = {
@@ -20,14 +25,50 @@ const ExpoSecureStoreAdapter = {
 };
 
 // Initialize Supabase client
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
     storage: ExpoSecureStoreAdapter,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    detectSessionInUrl: Platform.OS === 'web', // Only enable for web
   },
 });
+
+// Helper function to check and create a profile if needed
+const ensureProfileExists = async (user: any) => {
+  if (!user) return;
+  
+  try {
+    // Check if profile exists
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', user.id)
+      .single();
+    
+    // If no profile exists or there was an error, create one
+    if (!data || error) {
+      const userData = user.user_metadata || {};
+      const { error: insertError } = await supabase
+        .from('profiles')
+        .insert([
+          {
+            id: user.id,
+            username: userData.username || user.email?.split('@')[0],
+            full_name: userData.full_name || '',
+            avatar_url: null,
+            updated_at: new Date(),
+          },
+        ]);
+      
+      if (insertError) {
+        console.error('Error creating missing profile:', insertError);
+      }
+    }
+  } catch (e) {
+    console.error('Error ensuring profile exists:', e);
+  }
+};
 
 // Helper functions for authentication
 export const signIn = async (email: string, password: string) => {
@@ -36,6 +77,12 @@ export const signIn = async (email: string, password: string) => {
       email,
       password,
     });
+    
+    // If sign in is successful, ensure the user has a profile
+    if (data?.user && !error) {
+      await ensureProfileExists(data.user);
+    }
+    
     return { data, error };
   } catch (e) {
     console.error('Error signing in:', e);
@@ -55,20 +102,30 @@ export const signUp = async (email: string, password: string, userData?: { usern
     
     // If sign up is successful, create a profile entry
     if (data?.user && !error) {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert([
-          {
-            id: data.user.id,
-            username: userData?.username,
-            full_name: userData?.full_name,
-            avatar_url: null,
-            updated_at: new Date(),
-          },
-        ]);
+      // Wait briefly to ensure the session is established
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      if (profileError) {
-        console.error('Error creating profile:', profileError);
+      // Get the current session to ensure we're authenticated
+      const { data: sessionData } = await supabase.auth.getSession();
+      
+      if (sessionData?.session) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: data.user.id,
+              username: userData?.username,
+              full_name: userData?.full_name,
+              avatar_url: null,
+              updated_at: new Date(),
+            },
+          ]);
+        
+        if (profileError) {
+          console.error('Error creating profile:', profileError);
+        }
+      } else {
+        console.log('Session not established, profile will be created on next login');
       }
     }
     

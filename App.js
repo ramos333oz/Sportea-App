@@ -4,6 +4,15 @@ import { Provider as PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+
+// Import web polyfills if running on web
+if (Platform.OS === 'web') {
+  // Import polyfills for web
+  import('./src/utils/webPolyfills').then(({ mockNativeModules }) => {
+    mockNativeModules();
+  });
+}
 
 // Import navigators and screens
 import AppNavigator from './src/navigation/AppNavigator';
@@ -14,11 +23,17 @@ import AuthContext from './src/contexts/AuthContext';
 import { theme } from './src/constants/theme';
 
 // Create a single supabase client for interacting with your database
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'your-supabase-url';
-const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'your-supabase-key';
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://vzigidvhgyvketpnruqa.supabase.co';
+const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6aWdpZHZoZ3l2a2V0cG5ydXFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIwMjcwMjUsImV4cCI6MjA1NzYwMzAyNX0.ECEkZ73U45K-DGKpScPlx-xfgmK_Ss5cgo3HhW_1Ih8';
+
+// Custom storage for web platform
+const storage = Platform.OS === 'web' 
+  ? localStorage 
+  : AsyncStorage;
+
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
-    storage: AsyncStorage,
+    storage: storage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,

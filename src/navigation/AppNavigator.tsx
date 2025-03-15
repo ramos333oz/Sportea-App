@@ -1,6 +1,6 @@
 import React, { useContext } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { NavigationContainer, LinkingOptions } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
 import GameDetailsScreen from '../screens/GameDetailsScreen';
@@ -12,13 +12,34 @@ export type AppStackParamList = {
   GameDetails: { gameId: string };
 };
 
-const Stack = createStackNavigator<AppStackParamList>();
+const Stack = createNativeStackNavigator<AppStackParamList>();
+
+// Configure deep linking
+const linking: LinkingOptions<AppStackParamList> = {
+  prefixes: ['sportea://', 'https://vzigidvhgyvketpnruqa.supabase.co'],
+  config: {
+    screens: {
+      Auth: {
+        path: 'auth',
+        // Nested navigators need their own screen mappings
+        screens: {
+          Login: 'login',
+          Register: 'register',
+          ForgotPassword: 'reset-password',
+          EmailConfirmation: 'verify', // Path for email confirmation
+        },
+      },
+      Main: 'main',
+      GameDetails: 'game/:gameId',
+    },
+  },
+};
 
 const AppNavigator = () => {
   const { isSignedIn } = useContext(AuthContext);
 
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {isSignedIn ? (
           <>
