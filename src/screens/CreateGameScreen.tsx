@@ -1,3 +1,4 @@
+// Ensure this file is properly saved before running the application
 import React, { useState } from 'react';
 import { StyleSheet, View, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { Text, TextInput, Button, Chip, HelperText, Avatar, Divider, Dialog, Portal } from 'react-native-paper';
@@ -6,6 +7,8 @@ import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MainTabParamList } from '../navigation/MainNavigator';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants/theme';
+import { supabase } from '../config/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 type CreateGameScreenNavigationProp = BottomTabNavigationProp<MainTabParamList, 'CreateGame'>;
 
@@ -38,6 +41,7 @@ const courtOptions = [
 
 const CreateGameScreen = () => {
   const navigation = useNavigation<CreateGameScreenNavigationProp>();
+  const { user } = useAuth();
   
   // Form state
   const [title, setTitle] = useState('');
@@ -145,28 +149,71 @@ const CreateGameScreen = () => {
   };
   
   // Handle form submission
-  const handleCreateGame = () => {
+  const handleCreateGame = async () => {
     if (validateForm()) {
       setLoading(true);
       
-      // Here you would normally send the data to your backend
-      console.log({
-        title,
-        description,
-        sport: selectedSport,
-        skillLevel: selectedSkillLevel,
-        court: selectedCourt,
-        date: date.toISOString(),
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
-        requiredPlayers: parseInt(requiredPlayers),
-      });
-      
-      // Simulate API call
-      setTimeout(() => {
+      try {
+        // Get the selected court details
+        const court = courtOptions.find(c => c.id === selectedCourt);
+        
+        // Format the time strings for database
+        const formattedStartTime = `${startTime.getHours().toString().padStart(2, '0')}:${startTime.getMinutes().toString().padStart(2, '0')}:00`;
+        const formattedEndTime = `${endTime.getHours().toString().padStart(2, '0')}:${endTime.getMinutes().toString().padStart(2, '0')}:00`;
+        
+        // Create the game in the database
+        const { data, error } = await supabase
+          .from('games')
+          .insert({
+            title,
+            description,
+            sport: selectedSport,
+            skill_level: selectedSkillLevel,
+            date: date.toISOString().split('T')[0], // Format as YYYY-MM-DD
+            start_time: formattedStartTime,
+            end_time: formattedEndTime,
+            required_players: parseInt(requiredPlayers),
+            host_id: user?.id,
+            status: 'open',
+            location: {
+              id: selectedCourt,
+              name: court?.name || 'Unknown Venue',
+              capacity: court?.capacity || 0
+            }
+          })
+          .select()
+          .single();
+        
+        if (error) {
+          console.error('Error creating game:', error);
+          setErrors({ ...errors, submit: 'Failed to create game. Please try again.' });
+        } else {
+          console.log('Game created successfully:', data);
+          
+          // Add the host as a participant
+          if (data) {
+            const { error: participantError } = await supabase
+              .from('game_participants')
+              .insert({
+                game_id: data.id,
+                user_id: user?.id,
+                status: 'joined'
+              });
+            
+            if (participantError) {
+              console.error('Error adding host as participant:', participantError);
+            }
+          }
+          
+          // Navigate back to dashboard
+          navigation.navigate('Dashboard');
+        }
+      } catch (error) {
+        console.error('Unexpected error:', error);
+        setErrors({ ...errors, submit: 'An unexpected error occurred. Please try again.' });
+      } finally {
         setLoading(false);
-        navigation.navigate('Dashboard');
-      }, 1500);
+      }
     }
   };
   
@@ -563,4 +610,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default CreateGameScreen; 
+export default CreateGameScreen;
