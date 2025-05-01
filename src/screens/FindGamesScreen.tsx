@@ -10,9 +10,27 @@ import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants/theme';
 import SporteaMap from '../components/MapView';
 import { gameUtils } from '../utils/supabaseUtils';
 import { calculateDistance } from '../utils/mapUtils';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../services/supabase';
+import { TABLES } from '../constants/database';
+import { Game } from '../types/database';
 
 type FindGamesScreenNavigationProp = BottomTabNavigationProp<MainTabParamList, 'FindGames'>;
 type FindGamesNavigationProp = StackNavigationProp<AppStackParamList>;
+
+interface DisplayGame extends Partial<Game> {
+  id: string;
+  title: string;
+  date: string;
+  location: string;
+  participants: number;
+  totalSpots: number;
+  sport: string;
+  host: string;
+  distance: number | null;
+  skillLevel: string;
+}
 
 // Mock data for games
 const mockGames = [
@@ -102,8 +120,8 @@ const FindGamesScreen = () => {
   const [selectedSport, setSelectedSport] = useState('all');
   const [selectedSkillLevel, setSelectedSkillLevel] = useState('all');
   const [showMap, setShowMap] = useState(false);
-  const [games, setGames] = useState([]);
-  const [filteredGames, setFilteredGames] = useState(mockGames);
+  const [games, setGames] = useState<DisplayGame[]>([]);
+  const [filteredGames, setFilteredGames] = useState<DisplayGame[]>(mockGames);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [userLocation, setUserLocation] = useState({ latitude: 37.7749, longitude: -122.4194 });
@@ -131,50 +149,55 @@ const FindGamesScreen = () => {
     try {
       setLoading(true);
       
-      // Build filters object based on selections
-      const filters = {};
-      if (selectedSport) {
-        filters.sport = selectedSport.toLowerCase();
-      }
-      if (selectedSkillLevel && selectedSkillLevel !== 'all') {
-        filters.skillLevel = selectedSkillLevel.toLowerCase();
-      }
+      const filters = {
+        sport: selectedSport !== 'all' ? selectedSport : undefined,
+        skillLevel: selectedSkillLevel !== 'all' ? selectedSkillLevel : undefined
+      };
       
-      // Use our Supabase utility to get games
       const { games: fetchedGames, error } = await gameUtils.getGames(filters);
       
       if (error) {
         console.error('Error fetching games:', error);
+        setGames(mockGames);
+        setFilteredGames(mockGames);
         return;
       }
       
-      // Calculate distance for each game if location data is available
+      if (fetchedGames && fetchedGames.length > 0) {
       const gamesWithDistance = fetchedGames.map(game => {
         let distance = null;
         
-        if (game.location && game.location.latitude && game.location.longitude) {
+          if (game.location_lat && game.location_lng) {
           distance = calculateDistance(
             userLocation.latitude,
             userLocation.longitude,
-            game.location.latitude,
-            game.location.longitude
+              game.location_lat,
+              game.location_lng
           );
         }
         
-        // Format game for display
         return {
           ...game,
           distance,
-          // Format participants count
-          participantsCount: game.participants ? game.participants.length : 0,
-        };
+            participants: game.participants?.length || 0,
+            totalSpots: game.max_participants,
+            sport: game.sport_type,
+            host: game.host?.username || 'Unknown Host',
+            skillLevel: game.skill_level
+          } as DisplayGame;
       });
       
       setGames(gamesWithDistance);
       filterGames(gamesWithDistance, searchQuery);
+      } else {
+        setGames(mockGames);
+        setFilteredGames(mockGames);
+      }
       
     } catch (error) {
       console.error('Error in fetchGames:', error);
+      setGames(mockGames);
+      setFilteredGames(mockGames);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -196,18 +219,27 @@ const FindGamesScreen = () => {
     fetchGames();
   };
 
-  const filterGames = (gamesData, query) => {
-    if (!gamesData) return;
-    
+  const filterGames = (gamesData: DisplayGame[], query: string) => {
     let filtered = [...gamesData];
     
     // Apply search query filter
     if (query) {
-      const lowercasedQuery = query.toLowerCase();
-      filtered = filtered.filter(
-        game => game.title.toLowerCase().includes(lowercasedQuery) || 
-               (game.description && game.description.toLowerCase().includes(lowercasedQuery))
+      const lowercaseQuery = query.toLowerCase();
+      filtered = filtered.filter(game => 
+        game.title.toLowerCase().includes(lowercaseQuery) ||
+        game.location.toLowerCase().includes(lowercaseQuery) ||
+        game.host.toLowerCase().includes(lowercaseQuery)
       );
+    }
+    
+    // Apply sport filter
+    if (selectedSport !== 'all') {
+      filtered = filtered.filter(game => game.sport === selectedSport);
+    }
+    
+    // Apply skill level filter
+    if (selectedSkillLevel !== 'all') {
+      filtered = filtered.filter(game => game.skillLevel === selectedSkillLevel);
     }
     
     setFilteredGames(filtered);

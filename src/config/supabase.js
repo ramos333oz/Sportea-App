@@ -1,48 +1,99 @@
 import { createClient } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
-// Import URL polyfill only for non-web platforms
-if (Platform.OS !== 'web') {
-  require('react-native-url-polyfill/auto');
-}
+// Get the environment variables
+const supabaseUrl = Constants.expoConfig.extra?.supabaseUrl || process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = Constants.expoConfig.extra?.supabaseAnonKey || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-// Use localStorage for web, otherwise use AsyncStorage
-let AsyncStorage;
-if (Platform.OS !== 'web') {
-  AsyncStorage = require('@react-native-async-storage/async-storage').default;
-}
-
-// Supabase configuration
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://vzigidvhgyvketpnruqa.supabase.co';
-const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6aWdpZHZoZ3l2a2V0cG5ydXFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIwMjcwMjUsImV4cCI6MjA1NzYwMzAyNX0.ECEkZ73U45K-DGKpScPlx-xfgmK_Ss5cgo3HhW_1Ih8';
-
-// Storage adapter
-const storageAdapter = Platform.OS === 'web' 
-  ? {
-      getItem: (key) => {
-        const value = localStorage.getItem(key);
-        return Promise.resolve(value);
-      },
-      setItem: (key, value) => {
-        localStorage.setItem(key, value);
-        return Promise.resolve(true);
-      },
-      removeItem: (key) => {
-        localStorage.removeItem(key);
-        return Promise.resolve();
-      }
-    } 
-  : AsyncStorage;
-
-// Initialize Supabase client
-export const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    storage: storageAdapter,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: Platform.OS === 'web',
+// Implement secure storage
+const ExpoSecureStoreAdapter = {
+  getItem: (key) => {
+    return SecureStore.getItemAsync(key);
   },
-});
+  setItem: (key, value) => {
+    return SecureStore.setItemAsync(key, value);
+  },
+  removeItem: (key) => {
+    return SecureStore.deleteItemAsync(key);
+  },
+};
+
+// Create storage config based on platform
+const storageConfig = Platform.OS === 'web' 
+  ? { localStorage: window.localStorage }
+  : {
+      storage: ExpoSecureStoreAdapter,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    };
+
+// Debug helper
+const debugLog = (message, data = '') => {
+  if (__DEV__) {
+    console.log(`[Supabase Debug] ${message}`, data);
+  }
+};
+
+// Create and configure Supabase client
+const createSupabaseClient = () => {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase URL and Anon Key are required');
+  }
+
+  debugLog('Initializing Supabase with URL:', supabaseUrl);
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      storage: AsyncStorage,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
+    db: {
+      schema: 'public',
+    },
+  });
+
+  // Add response interceptor for debugging
+  const originalRequest = supabase.rest.headers;
+  supabase.rest.headers = (...args) => {
+    debugLog('API Request:', args);
+    return originalRequest.apply(supabase.rest, args);
+  };
+
+  return supabase;
+};
+
+// Export configured client
+export const supabase = createSupabaseClient();
+
+// Export helper functions
+export const getSupabaseUrl = () => supabaseUrl;
+
+// Test connection function
+export const testSupabaseConnection = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('count')
+      .limit(1);
+    
+    if (error) {
+      debugLog('Connection test failed:', error);
+      return { success: false, error };
+    }
+    
+    debugLog('Connection test successful');
+    return { success: true, data };
+  } catch (error) {
+    debugLog('Connection test error:', error);
+    return { success: false, error };
+  }
+};
 
 // Table names - used throughout the app for consistency
 export const TABLES = {

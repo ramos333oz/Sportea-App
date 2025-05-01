@@ -1,36 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { navigationTheme } from '../constants/theme';
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
-import { getCurrentUser } from '../services/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 const RootNavigator = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    // Check if user is authenticated
-    const checkAuth = async () => {
-      try {
-        const { data: { user }, error } = await getCurrentUser();
-        
-        if (error || !user) {
-          setIsAuthenticated(false);
-          return;
-        }
-        
-        setIsAuthenticated(true);
-      } catch (error) {
-        setIsAuthenticated(false);
-      }
-    };
-
-    checkAuth();
-  }, []);
+  const { isLoading, isSignedIn } = useAuth();
 
   // Loading state
-  if (isAuthenticated === null) {
+  if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" />
@@ -40,7 +20,7 @@ const RootNavigator = () => {
 
   return (
     <NavigationContainer theme={navigationTheme}>
-      {isAuthenticated ? <MainNavigator /> : <AuthNavigator />}
+      {isSignedIn ? <MainNavigator /> : <AuthNavigator />}
     </NavigationContainer>
   );
 };

@@ -339,3 +339,70 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - Hat tip to the React Native and Expo communities
 - Supabase for providing an excellent backend solution 
+
+## Testing with Expo Go
+
+To test the app on your mobile device using Expo Go:
+
+1. Make sure your computer and phone are on the same WiFi network
+2. Run the app with the special port configuration:
+   ```
+   npm run start-expo-go
+   ```
+3. Scan the QR code with your iPhone camera app or directly from the Expo Go app on Android
+4. The app will open in Expo Go
+
+### Authentication with Supabase
+
+For authentication to work properly in Expo Go:
+
+1. Make sure your Supabase project has the correct Site URL configured:
+   - Go to Authentication → URL Configuration
+   - Add `exp://10.0.2.2:8083` to your Site URLs
+   - Add `exp://10.0.2.2:8083` to your Redirect URLs
+
+2. If testing on a real device, you might need to use your computer's local IP instead:
+   - Find your computer's IP address on your network
+   - Use `exp://YOUR_IP_ADDRESS:8083` in Supabase configuration
+   - Also update this in the `getRedirectUrl()` function in App.js
+
+3. Troubleshooting authentication issues:
+   - Check network errors in the Expo developer tools
+   - Ensure your device can reach the Supabase server
+   - The app forces login screen display for testing (modify App.js to change this behavior) 
+
+## Testing with Emulators
+
+For testing the app in emulators (recommended for development):
+
+1. First, set up the correct URLs in Supabase using our helper script:
+   ```
+   npm run setup-urls
+   ```
+   This will output all the URLs you need to add to your Supabase configuration.
+
+2. Configure Supabase:
+   - Go to Authentication → URL Configuration
+   - Set Site URL to:
+     - `exp://10.0.2.2:8083` for Android Emulator
+     - `exp://localhost:8083` for iOS Simulator
+   - Add ALL of these to Redirect URLs:
+     - `sportea://`
+     - `exp://10.0.2.2:8083`
+     - `exp://127.0.0.1:8083`
+     - `exp://localhost:8083`
+
+3. Run the app in your emulator:
+   ```
+   # For Android emulator
+   npm run emulator-android
+
+   # For iOS simulator
+   npm run emulator-ios
+   ```
+
+### Troubleshooting Emulator Issues
+
+- **Android Emulator Network Issues**: If the Android emulator cannot connect, make sure it has internet access
+- **iOS Simulator Authentication Problems**: Check that you're using `exp://localhost:8083` in Supabase configuration
+- **Login Screen Not Showing**: The app is configured to always show the login screen for testing (see App.js) 

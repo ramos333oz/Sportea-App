@@ -1,0 +1,65 @@
+{
+  "mcpServers": {
+    "Github": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@smithery-ai/github",
+        "--config",
+        "\"{\\\"githubPersonalAccessToken\\\":\\\"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\\\"}\""
+      ]
+    },
+    "browser-tools": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@agentdeskai/browser-tools-mcp@1.2.0"
+      ]
+    },
+    "supabase mcp": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@Deploya-labs/mcp-supabase",
+        "--config",
+        "\"{\\\"supabaseDbPassword\\\":\\\"Ulalala@369\\\",\\\"supabaseProjectRef\\\":\\\"vzigidvhgyvketpnruqa\\\"}\""
+      ]
+    },
+    "V0 MCP": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@21st-dev/magic-mcp",
+        "--config",
+        "\"{\\\"TWENTY_FIRST_API_KEY\\\":\\\"d58b2a165c773644f2233284d9a67d9ac018fea361beece7e646bfeb39871c71\\\"}\""
+      ]
+    },
+    "Sequential Thinking": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@smithery-ai/server-sequential-thinking",
+        "--config",
+        "\"{\\\"apiKey\\\":\\\"e1fe3fce-a1bb-4049-9562-92a0e47f6596\\\"}\""
+      ]
+    }
+  }
+} 

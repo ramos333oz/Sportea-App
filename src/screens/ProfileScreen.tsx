@@ -1,13 +1,39 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Text, Avatar, Button, Card, List, Divider, FAB, Snackbar } from 'react-native-paper';
+import { Text, Avatar, Button, Card, List, Divider, FAB, Snackbar, Modal, Portal } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useAuth } from '../contexts/AuthContext';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants/theme';
-import AuthContext from '../contexts/AuthContext';
 import { getUserProfile, getUserStats, getUserGames } from '../utils/profileUtils';
 import { supabase } from '../services/supabase';
-import { TABLES } from '../config/supabase';
+import { TABLES } from '../constants/database';
+
+interface Sport {
+  id: string;
+  name: string;
+  icon: string;
+  count?: number;
+}
+
+interface UserStats {
+  gamesPlayed: number;
+  gamesHosted: number;
+  sportsPlayed: Sport[];
+}
+
+interface UserProfile {
+  id: string;
+  username: string;
+  full_name: string;
+  bio?: string;
+  avatar_url?: string;
+  location?: string;
+  followers_count?: number;
+  following_count?: number;
+  sports_preferences?: Sport[];
+  stats?: UserStats;
+}
 
 // Keep mock data as fallback
 const mockUser = {
@@ -84,14 +110,15 @@ const mockRecentActivity = [
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
-  const { user } = useContext(AuthContext);
+  const { user, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('games');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [upcomingGames, setUpcomingGames] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
   
   useEffect(() => {
     if (user) {
@@ -405,11 +432,11 @@ const ProfileScreen = () => {
         <Card.Content>
           <Text style={styles.preferencesTitle}>Preferred Sports</Text>
           <View style={styles.preferencesChipsContainer}>
-            {profile.preferences?.preferredSports.map(sport => (
-              <View key={sport} style={styles.preferencesChip}>
-                <Text style={styles.preferencesChipText}>{sport}</Text>
+            {profile.sports_preferences?.map(sport => (
+              <View key={sport.id} style={styles.preferencesChip}>
+                <Text style={styles.preferencesChipText}>{sport.name}</Text>
                 <Text style={styles.skillLevelText}>
-                  {profile.preferences.skillLevels[sport as keyof typeof profile.preferences.skillLevels]}
+                  {profile.stats?.sportsPlayed.find(s => s.name === sport.name)?.count || 0}
                 </Text>
               </View>
             ))}
@@ -430,6 +457,45 @@ const ProfileScreen = () => {
         Edit Preferences
       </Button>
     </View>
+  );
+  
+  const handleLogout = async () => {
+    try {
+      const { success, error } = await signOut();
+      if (!success) {
+        throw new Error(error || 'Failed to sign out');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sign out');
+    }
+  };
+
+  const renderSettingsModal = () => (
+    <Portal>
+      <Modal
+        visible={showSettings}
+        onDismiss={() => setShowSettings(false)}
+        style={styles.modalContainer}
+      >
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Settings</Text>
+          <Button
+            mode="contained"
+            onPress={handleLogout}
+            style={styles.logoutButton}
+          >
+            Logout
+          </Button>
+          <Button
+            mode="outlined"
+            onPress={() => setShowSettings(false)}
+            style={styles.cancelButton}
+          >
+            Cancel
+          </Button>
+        </View>
+      </Modal>
+    </Portal>
   );
   
   if (isLoading) {
@@ -458,15 +524,17 @@ const ProfileScreen = () => {
         style={styles.fab}
         icon="cog"
         color={COLORS.background}
-        onPress={() => console.log('Settings')}
+        onPress={() => setShowSettings(true)}
       />
+      
+      {renderSettingsModal()}
       
       <Snackbar
         visible={!!error}
         onDismiss={() => setError('')}
         action={{
-          label: 'Retry',
-          onPress: loadUserData,
+          label: 'Dismiss',
+          onPress: () => setError(''),
         }}
       >
         {error}
@@ -752,6 +820,29 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md,
     fontSize: FONT_SIZES.lg,
     color: COLORS.disabled,
+  },
+  modalContainer: {
+    backgroundColor: 'transparent',
+    padding: 0,
+  },
+  modalContent: {
+    backgroundColor: COLORS.background,
+    padding: SPACING.xl,
+    margin: SPACING.xl,
+    borderRadius: 8,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: SPACING.xl,
+    textAlign: 'center',
+  },
+  logoutButton: {
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.error,
+  },
+  cancelButton: {
+    borderColor: COLORS.border,
   },
 });
 
