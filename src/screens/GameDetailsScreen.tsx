@@ -3,27 +3,73 @@ import { View, StyleSheet, ScrollView, RefreshControl, Alert } from 'react-nativ
 import { Text, Button, Card, Avatar, Chip, Divider, ActivityIndicator } from 'react-native-paper';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { RouteProp } from '@react-navigation/native';
-import { gameUtils, authUtils } from '../utils/supabaseUtils';
+import { supabase } from '../config/supabase';
 import { getAddressFromCoordinates } from '../utils/mapUtils';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants/theme';
 import SporteaMap from '../components/MapView';
+import { useAuth } from '../contexts/AuthContext';
 
-type GameDetailsRouteProp = RouteProp<{ GameDetails: { gameId: string } }, 'GameDetails'>;
+type GameDetailsRouteProp = RouteProp<{ 
+  GameDetails: { 
+    gameId: string;
+    isManaging?: boolean;
+  } 
+}, 'GameDetails'>;
+
+// Game type definition
+interface GameParticipant {
+  user_id: string;
+  status: string;
+  profiles?: {
+    username?: string;
+    full_name?: string;
+  };
+}
+
+interface GameLocation {
+  id?: string;
+  name?: string;
+  capacity?: number;
+  latitude?: number;
+  longitude?: number;
+}
+
+interface Game {
+  id: string;
+  title: string;
+  description?: string;
+  sport: string;
+  skill_level?: string;
+  date: string;
+  start_time?: string;
+  end_time?: string;
+  required_players: number;
+  host_id: string;
+  location?: GameLocation;
+  participants?: GameParticipant[];
+  host?: {
+    username?: string;
+    full_name?: string;
+  };
+  fee?: string;
+  equipment?: string;
+}
 
 const GameDetailsScreen = () => {
   const navigation = useNavigation();
   const route = useRoute<GameDetailsRouteProp>();
-  const { gameId } = route.params;
+  const { gameId, isManaging } = route.params;
   
-  const [game, setGame] = useState(null);
+  const [game, setGame] = useState<Game | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [joining, setJoining] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [formattedAddress, setFormattedAddress] = useState('');
-  const [isUserParticipant, setIsUserParticipant] = useState(false);
-  const [isUserHost, setIsUserHost] = useState(false);
-  const [userId, setUserId] = useState(null);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  const { user } = useAuth();
 
   useEffect(() => {
     fetchUserData();
@@ -32,12 +78,9 @@ const GameDetailsScreen = () => {
 
   const fetchUserData = async () => {
     try {
-      const { user, error } = await authUtils.getUser();
-      if (error || !user) {
-        console.error('Error fetching user data:', error);
-        return;
+      if (user) {
+        setUserId(user.id);
       }
-      setUserId(user.id);
     } catch (error) {
       console.error('Error in fetchUserData:', error);
     }
@@ -46,35 +89,48 @@ const GameDetailsScreen = () => {
   const fetchGameDetails = async () => {
     try {
       setLoading(true);
-      const { game: gameData, error } = await gameUtils.getGameById(gameId);
+      
+      console.log('Fetching game details for ID:', gameId);
+      
+      // Fetch game data
+      const { data: gameData, error } = await supabase
+        .from('games')
+        .select(`
+          *,
+          participants:game_participants(*)
+        `)
+        .eq('id', gameId)
+        .single();
       
       if (error) {
         console.error('Error fetching game details:', error);
-        Alert.alert('Error', 'Failed to load game details');
         setLoading(false);
         return;
       }
       
+      console.log('Game data received:', gameData);
+      
+      // Set game data
       setGame(gameData);
       
-      // Check if user is participant
-      if (userId && gameData.participants) {
-        const isParticipant = gameData.participants.some(
-          p => p.user_id === userId && p.status === 'joined'
-        );
-        setIsUserParticipant(isParticipant);
-        
-        // Check if user is host
-        setIsUserHost(userId === gameData.host_id);
-      }
+      // No need to set these separately as we're calculating them directly when needed
+      // setIsUserParticipant(
+      //   gameData.participants?.some((p: GameParticipant) => p.user_id === userId) || false
+      // );
+      // 
+      // setIsUserHost(gameData.host_id === userId);
       
-      // Get formatted address if location exists
-      if (gameData.location && gameData.location.latitude && gameData.location.longitude) {
-        const { formattedAddress: address } = await getAddressFromCoordinates(
-          gameData.location.latitude,
-          gameData.location.longitude
-        );
-        setFormattedAddress(address);
+      // Get location coordinates if available
+      if (gameData.location?.latitude && gameData.location?.longitude) {
+        try {
+          const result = await getAddressFromCoordinates(
+            gameData.location.latitude,
+            gameData.location.longitude
+          );
+          setFormattedAddress(result.formattedAddress);
+        } catch (error) {
+          console.error('Error getting address:', error);
+        }
       }
       
       setLoading(false);
@@ -97,9 +153,56 @@ const GameDetailsScreen = () => {
       return;
     }
     
+    // Prevent joining if user is the host
+    if (game?.host_id === userId) {
+      Alert.alert('Info', 'You are the host of this game and already joined.');
+      return;
+    }
+    
+    // Check if user is hosting any active games
     try {
       setJoining(true);
-      const { data, error } = await gameUtils.joinGame(gameId, userId);
+      
+      // Check if user is hosting any active games
+      const { data: hostedGames, error: hostedGamesError } = await supabase
+        .from('games')
+        .select('id, title')
+        .eq('host_id', userId)
+        .eq('status', 'open');
+        
+      if (hostedGamesError) {
+        console.error('Error checking hosted games:', hostedGamesError);
+      } else if (hostedGames && hostedGames.length > 0) {
+        Alert.alert(
+          'Cannot Join Game', 
+          'You are currently hosting a game. You need to delete your hosted game before joining another game.',
+          [{ text: 'OK' }]
+        );
+        setJoining(false);
+        return;
+      }
+      
+      // Check if user is already a participant
+      const { data: existingParticipant, error: participantCheckError } = await supabase
+        .from('game_participants')
+        .select('*')
+        .eq('game_id', gameId)
+        .eq('user_id', userId)
+        .single();
+        
+      if (participantCheckError && participantCheckError.code !== 'PGRST116') {
+        // PGRST116 means no rows returned, which is what we want
+        console.error('Error checking participant status:', participantCheckError);
+      } else if (existingParticipant) {
+        Alert.alert('Info', 'You have already joined this game.');
+        setJoining(false);
+        return;
+      }
+      
+      // If all checks pass, join the game
+      const { data, error } = await supabase
+        .from('game_participants')
+        .insert({ game_id: gameId, user_id: userId, status: 'joined' });
       
       if (error) {
         console.error('Error joining game:', error);
@@ -125,7 +228,11 @@ const GameDetailsScreen = () => {
     
     try {
       setLeaving(true);
-      const { data, error } = await gameUtils.leaveGame(gameId, userId);
+      const { data, error } = await supabase
+        .from('game_participants')
+        .delete()
+        .eq('game_id', gameId)
+        .eq('user_id', userId);
       
       if (error) {
         console.error('Error leaving game:', error);
@@ -156,6 +263,43 @@ const GameDetailsScreen = () => {
       title: game.title,
       description: formattedAddress || 'Game location'
     }];
+  };
+
+  const handleDeleteGame = () => {
+    Alert.alert(
+      'Delete Game',
+      'Are you sure you want to delete this game? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeleting(true);
+              const { error } = await supabase
+                .from('games')
+                .delete()
+                .eq('id', gameId);
+              
+              if (error) {
+                console.error('Error deleting game:', error);
+                Alert.alert('Error', 'Failed to delete the game');
+                setDeleting(false);
+                return;
+              }
+              
+              Alert.alert('Success', 'Game has been deleted');
+              navigation.goBack();
+            } catch (error) {
+              console.error('Error in handleDeleteGame:', error);
+              Alert.alert('Error', 'An unexpected error occurred');
+              setDeleting(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   if (loading) {
@@ -192,12 +336,56 @@ const GameDetailsScreen = () => {
   const endTime = game.end_time ? game.end_time.slice(0, 5) : '';
   const timeRange = startTime && endTime ? `${startTime} - ${endTime}` : '';
   
-  // Get participants count
-  const participantsCount = game.participants ? 
-    game.participants.filter(p => p.status === 'joined').length : 0;
-  
-  const spotsLeft = game.required_players - participantsCount;
+  // Calculate participants count and spots left
+  const participantsCount = game?.participants?.length || 0;
+  const spotsLeft = game?.required_players ? game.required_players - participantsCount : 0;
   const isFull = spotsLeft <= 0;
+  const isUserHost = game?.host_id === userId;
+  const isUserParticipant = game?.participants?.some(p => p.user_id === userId) || false;
+
+  const renderActionButton = () => {
+    if (loading) return null;
+    
+    // If user is the host and we're in manage mode, show delete button
+    if (isUserHost && isManaging) {
+      return (
+        <Button
+          mode="contained"
+          style={[styles.actionButton, { backgroundColor: COLORS.error }]}
+          onPress={handleDeleteGame}
+          disabled={deleting}
+        >
+          {deleting ? 'Deleting...' : 'Delete Game'}
+        </Button>
+      );
+    }
+    
+    // If user is already a participant, show leave button
+    if (isUserParticipant) {
+      return (
+        <Button
+          mode="outlined"
+          style={styles.actionButton}
+          onPress={handleLeaveGame}
+          disabled={leaving}
+        >
+          {leaving ? 'Leaving...' : 'Leave Game'}
+        </Button>
+      );
+    }
+    
+    // Otherwise show join button
+    return (
+      <Button
+        mode="contained"
+        style={styles.actionButton}
+        onPress={handleJoinGame}
+        disabled={joining || isFull}
+      >
+        {joining ? 'Joining...' : isFull ? 'Game is Full' : 'Join Game'}
+      </Button>
+    );
+  };
 
   return (
     <ScrollView 
@@ -228,6 +416,16 @@ const GameDetailsScreen = () => {
       </View>
       
       <Divider style={styles.divider} />
+      
+      {/* Screen Title */}
+      {isManaging && isUserHost && (
+        <View style={styles.managementHeader}>
+          <Text style={styles.managementTitle}>Game Management</Text>
+          <Text style={styles.managementSubtitle}>
+            As the host, you can manage this game and delete it if needed.
+          </Text>
+        </View>
+      )}
       
       {/* Game Details */}
       <Card style={styles.detailsCard}>
@@ -307,13 +505,13 @@ const GameDetailsScreen = () => {
           <View style={styles.participantsList}>
             {game.participants && game.participants.length > 0 ? (
               game.participants
-                .filter(p => p.status === 'joined')
-                .map((participant, index) => (
+                .filter((p: GameParticipant) => p.status === 'joined')
+                .map((participant: GameParticipant, index: number) => (
                   <View key={participant.user_id} style={styles.participantItem}>
                     <Avatar.Text 
                       size={40} 
                       label={participant.profiles?.username?.charAt(0) || 'U'} 
-                      backgroundColor={COLORS.primary}
+                      style={{ backgroundColor: COLORS.primary }}
                     />
                     <Text style={styles.participantName}>
                       {participant.profiles?.username || participant.profiles?.full_name || 'Unknown Player'}
@@ -332,35 +530,7 @@ const GameDetailsScreen = () => {
       
       {/* Join/Leave Button */}
       <View style={styles.actionButtonContainer}>
-        {isUserHost ? (
-          <Button
-            mode="contained"
-            style={[styles.actionButton, { backgroundColor: COLORS.secondary }]}
-            onPress={() => navigation.navigate('CreateGame', { gameId })}
-          >
-            Edit Game
-          </Button>
-        ) : isUserParticipant ? (
-          <Button
-            mode="contained"
-            style={[styles.actionButton, { backgroundColor: COLORS.error }]}
-            onPress={handleLeaveGame}
-            loading={leaving}
-            disabled={leaving}
-          >
-            Leave Game
-          </Button>
-        ) : (
-          <Button
-            mode="contained"
-            style={styles.actionButton}
-            onPress={handleJoinGame}
-            loading={joining}
-            disabled={joining || isFull}
-          >
-            {isFull ? 'Game is Full' : 'Join Game'}
-          </Button>
-        )}
+        {renderActionButton()}
       </View>
     </ScrollView>
   );
@@ -494,6 +664,17 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     padding: SPACING.sm,
+  },
+  managementHeader: {
+    marginBottom: SPACING.md,
+  },
+  managementTitle: {
+    fontSize: FONT_SIZES.xl,
+    fontWeight: 'bold',
+    marginBottom: SPACING.sm,
+  },
+  managementSubtitle: {
+    color: COLORS.text,
   },
 });
 
