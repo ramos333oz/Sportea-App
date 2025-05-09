@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
-import { Text, Card, Button, Avatar, Chip } from 'react-native-paper';
+import { StyleSheet, View, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, StatusBar, Alert } from 'react-native';
+import { Text, Card, Button, Avatar, Chip, Surface, Divider } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { COLORS, SPACING, FONT_SIZES } from '../constants/theme';
+import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants/theme';
 import { supabase } from '../config/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { format } from 'date-fns';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 // Define the navigation param list
 type RootStackParamList = {
@@ -21,7 +22,7 @@ type DashboardScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Da
 
 // Sport icon mapping
 const getSportIcon = (sportType: string) => {
-  switch (sportType) {
+  switch (sportType?.toLowerCase()) {
     case 'basketball':
       return 'basketball';
     case 'football':
@@ -30,10 +31,39 @@ const getSportIcon = (sportType: string) => {
       return 'badminton';
     case 'table-tennis':
       return 'table-tennis';
+    case 'volleyball':
+      return 'volleyball';
+    case 'tennis':
+      return 'tennis';
     default:
-      return 'sport';
+      return 'trophy'; // Changed from 'sport' to a valid icon name
   }
 };
+
+// Sport color mapping
+const getSportColor = (sportType: string) => {
+  switch (sportType?.toLowerCase()) {
+    case 'basketball':
+      return '#FF6B00'; // Orange
+    case 'football':
+      return '#4CAF50'; // Green
+    case 'badminton':
+      return '#2196F3'; // Blue
+    case 'table-tennis':
+      return '#F44336'; // Red
+    case 'volleyball':
+      return '#9C27B0'; // Purple
+    case 'tennis':
+      return '#FFEB3B'; // Yellow
+    default:
+      return COLORS.primary;
+  }
+};
+
+// Define error color if not already in COLORS
+if (!COLORS.error) {
+  COLORS.error = '#F44336'; // Red color for errors
+}
 
 // Popular sports data
 const popularSports = [
@@ -50,16 +80,107 @@ const DashboardScreen = () => {
   const [upcomingGames, setUpcomingGames] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [currentDate, setCurrentDate] = useState<string>("");
+  const [username, setUsername] = useState<string>("");
 
-  // Fetch user's games
+  // Format date for display
+  const formatDate = (date: Date): string => {
+    const options: Intl.DateTimeFormatOptions = {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    };
+    return date.toLocaleDateString('en-US', options);
+  };
+
+  // Handle permanent deletion of a cancelled game
+  const handlePermanentDelete = async (gameId: string) => {
+    try {
+      // Show confirmation dialog
+      Alert.alert(
+        'Delete Game Permanently',
+        'Are you sure you want to permanently delete this game? This action cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                // Show loading indicator
+                setLoading(true);
+
+                // APPROACH: Since we're having foreign key constraint issues,
+                // let's use a two-step process:
+                // 1. First mark the game as fully deleted (different from cancelled)
+                // 2. Then remove it from the UI immediately
+
+                // Update the game to mark it as fully deleted
+                const { error: updateError } = await supabase
+                  .from('games')
+                  .update({
+                    status: 'deleted',
+                    title: `[DELETED] Game ${gameId.substring(0, 8)}...`,
+                    description: 'This game has been permanently deleted by the host.'
+                  })
+                  .eq('id', gameId);
+
+                if (updateError) {
+                  console.error('Error marking game as deleted:', updateError);
+                  Alert.alert('Error', 'Failed to delete game. Please try again.');
+                  setLoading(false);
+                  return;
+                }
+
+                // Remove the game from the local state immediately
+                setUpcomingGames(prevGames => prevGames.filter(game => game.id !== gameId));
+
+                // Refresh games list in the background
+                fetchGames();
+
+                setLoading(false);
+                Alert.alert('Success', 'Game has been permanently deleted from your view.');
+              } catch (error) {
+                console.error('Error in permanent delete:', error);
+                Alert.alert('Error', 'An unexpected error occurred.');
+                setLoading(false);
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error in handlePermanentDelete:', error);
+      Alert.alert('Error', 'An unexpected error occurred.');
+    }
+  };
+
+  // Fetch user's games and profile
   const fetchGames = async () => {
     try {
       setLoading(true);
-      
+
       if (!user) return;
-      
+
       console.log('Fetching games for user:', user.id);
-      
+
+      // Set current date
+      setCurrentDate(formatDate(new Date()));
+
+      // Fetch user profile to get username
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('username, full_name')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) {
+        console.error('Error fetching profile:', profileError);
+      } else if (profileData) {
+        setUsername(profileData.full_name || profileData.username || 'User');
+      }
+
       // Fetch user's upcoming games (games they're hosting or participating in)
       const { data: participatingGames, error: participatingError } = await supabase
         .from('game_participants')
@@ -75,30 +196,30 @@ const DashboardScreen = () => {
             end_time,
             required_players,
             location,
-            host_id
+            host_id,
+            status
           )
         `)
         .eq('user_id', user.id)
         .eq('status', 'joined');
-        
+
       if (participatingError) {
         console.error('Error fetching participating games:', participatingError);
       }
-      
-      // Fetch games the user is hosting
+
+      // Fetch games the user is hosting, including cancelled games
       const { data: hostedGames, error: hostedError } = await supabase
         .from('games')
         .select('*')
-        .eq('host_id', user.id)
-        .in('status', ['open', 'full', 'in-progress']);
-        
+        .eq('host_id', user.id);
+
       if (hostedError) {
         console.error('Error fetching hosted games:', hostedError);
       }
-      
+
       // Combine and format the games
       const userGames: any[] = [];
-      
+
       // Add participating games
       if (participatingGames) {
         participatingGames.forEach(item => {
@@ -107,7 +228,7 @@ const DashboardScreen = () => {
           }
         });
       }
-      
+
       // Add hosted games (avoiding duplicates)
       if (hostedGames) {
         hostedGames.forEach(game => {
@@ -116,13 +237,13 @@ const DashboardScreen = () => {
           }
         });
       }
-      
+
       // Get participant counts for all games
       const gameIds = userGames.map(game => game.id);
-      
+
       // Only fetch participant counts if there are games
       let participantCounts: Record<string, number> = {};
-      
+
       if (gameIds.length > 0) {
         // Fetch participants for each game individually
         await Promise.all(gameIds.map(async (gameId) => {
@@ -131,7 +252,7 @@ const DashboardScreen = () => {
             .select('*')
             .eq('game_id', gameId)
             .eq('status', 'joined');
-          
+
           if (error) {
             console.error(`Error fetching participants for game ${gameId}:`, error);
           } else if (data) {
@@ -139,52 +260,76 @@ const DashboardScreen = () => {
           }
         }));
       }
-      
-      // Format the games for display
-      const formattedUserGames = userGames.map(game => {
-        // Format date and time
-        const gameDate = new Date(game.date);
-        const today = new Date();
-        const tomorrow = new Date();
-        tomorrow.setDate(today.getDate() + 1);
-        
-        let dateText;
-        if (gameDate.toDateString() === today.toDateString()) {
-          dateText = 'Today';
-        } else if (gameDate.toDateString() === tomorrow.toDateString()) {
-          dateText = 'Tomorrow';
-        } else {
-          dateText = format(gameDate, 'EEE, MMM d');
-        }
-        
-        // Format time
-        const startTime = game.start_time ? format(new Date(`2000-01-01T${game.start_time}`), 'h:mm a') : '';
-        
-        // Get participant count for this game
-        const participantsCount = participantCounts[game.id] || 0;
-        
-        // Format location
-        let locationText = 'Location not specified';
-        if (typeof game.location === 'string') {
-          locationText = game.location;
-        } else if (game.location && game.location.name) {
-          locationText = game.location.name;
-        }
-        
-        return {
-          id: game.id,
-          title: game.title,
-          date: `${dateText}, ${startTime}`,
-          location: locationText,
-          participants: participantsCount,
-          totalSpots: game.required_players || 0,
-          sportType: game.sport,
-          isHosting: game.host_id === user.id,
-        };
-      });
-      
+
+      // Filter out deleted games completely and only show cancelled games to hosts
+      const formattedUserGames = userGames
+        .filter(game => {
+          // Remove games with 'deleted' status completely
+          if (game.status === 'deleted') return false;
+
+          // Keep the game if it's not cancelled OR if the user is the host
+          return game.status !== 'cancelled' || game.host_id === user.id;
+        })
+        .map(game => {
+          // Format date and time
+          const gameDate = new Date(game.date);
+          const today = new Date();
+          const tomorrow = new Date();
+          tomorrow.setDate(today.getDate() + 1);
+
+          let dateText;
+          if (gameDate.toDateString() === today.toDateString()) {
+            dateText = 'Today';
+          } else if (gameDate.toDateString() === tomorrow.toDateString()) {
+            dateText = 'Tomorrow';
+          } else {
+            dateText = format(gameDate, 'EEE, MMM d');
+          }
+
+          // Format time with validation
+          let startTime = '';
+          if (game.start_time) {
+            try {
+              // Ensure the time format is valid (HH:MM:SS or HH:MM)
+              const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
+              if (timeRegex.test(game.start_time)) {
+                startTime = format(new Date(`2000-01-01T${game.start_time}`), 'h:mm a');
+              } else {
+                startTime = game.start_time; // Use as is if not in expected format
+              }
+            } catch (error) {
+              console.error('Error formatting time:', error);
+              startTime = game.start_time; // Fallback to original string
+            }
+          }
+
+          // Get participant count for this game
+          const participantsCount = participantCounts[game.id] || 0;
+
+          // Format location
+          let locationText = 'Location not specified';
+          if (typeof game.location === 'string') {
+            locationText = game.location;
+          } else if (game.location && game.location.name) {
+            locationText = game.location.name;
+          }
+
+          return {
+            id: game.id,
+            title: game.title,
+            date: `${dateText}, ${startTime}`,
+            location: locationText,
+            participants: participantsCount,
+            totalSpots: game.required_players || 0,
+            sportType: game.sport,
+            isHosting: game.host_id === user.id,
+            isCancelled: game.status === 'cancelled',
+            status: game.status
+          };
+        });
+
       setUpcomingGames(formattedUserGames);
-      
+
     } catch (error) {
       console.error('Error in fetchGames:', error);
     } finally {
@@ -204,7 +349,8 @@ const DashboardScreen = () => {
 
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <StatusBar backgroundColor={COLORS.primary} barStyle="light-content" />
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -216,142 +362,212 @@ const DashboardScreen = () => {
         }
       >
         {/* Welcome Header */}
-        <View style={styles.header}>
-          <Text style={styles.welcomeText}>Welcome back!</Text>
-          <Text style={styles.dateText}>{format(new Date(), 'EEEE, MMMM d')}</Text>
-        </View>
-        
-        {/* Action Buttons */}
-        <View style={styles.actionButtonsContainer}>
-          <Button 
-            mode="contained" 
-            icon="plus" 
-            style={styles.actionButton}
-            contentStyle={styles.actionButtonContent}
-            onPress={() => navigation.navigate('CreateGame')}
-          >
-            Host a Game
-          </Button>
-          
-          <Button 
-            mode="outlined" 
-            icon="magnify" 
-            style={[styles.actionButton, styles.secondaryButton]}
-            contentStyle={styles.actionButtonContent}
-            onPress={() => navigation.navigate('FindGames')}
-          >
-            Find Games
-          </Button>
-        </View>
-        
-        {/* Upcoming Games Section */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Your Upcoming Games</Text>
-            <Text 
-              style={styles.viewAllText}
+        <Surface style={styles.welcomeCard}>
+          <View style={styles.welcomeHeader}>
+            <View>
+              <Text style={styles.welcomeText}>Welcome, {username}!</Text>
+              <Text style={styles.dateText}>{currentDate}</Text>
+            </View>
+            <Avatar.Icon
+              size={48}
+              icon="account"
+              style={styles.profileAvatar}
+              color={COLORS.background}
+            />
+          </View>
+
+          {/* Quick Action Buttons */}
+          <View style={styles.quickActionsContainer}>
+            <TouchableOpacity
+              style={styles.quickActionButton}
               onPress={() => navigation.navigate('FindGames')}
             >
-              View All
-            </Text>
+              <View style={[styles.actionIconContainer, { backgroundColor: COLORS.primary }]}>
+                <MaterialCommunityIcons name="magnify" color={COLORS.background} size={24} />
+              </View>
+              <Text style={styles.quickActionText}>Find Games</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => navigation.navigate('CreateGame')}
+            >
+              <View style={[styles.actionIconContainer, { backgroundColor: COLORS.secondary }]}>
+                <MaterialCommunityIcons name="plus" color={COLORS.background} size={24} />
+              </View>
+              <Text style={styles.quickActionText}>Host Game</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => navigation.navigate('Profile' as any)}
+            >
+              <View style={[styles.actionIconContainer, { backgroundColor: COLORS.tertiary }]}>
+                <MaterialCommunityIcons name="account" color={COLORS.background} size={24} />
+              </View>
+              <Text style={styles.quickActionText}>Profile</Text>
+            </TouchableOpacity>
           </View>
-          
+        </Surface>
+
+        {/* Upcoming Games Section */}
+        <Surface style={styles.sectionContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Your Upcoming Games</Text>
+            <MaterialCommunityIcons name="calendar" size={24} color={COLORS.primary} />
+          </View>
+          <Divider style={styles.divider} />
+
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={COLORS.primary} />
             </View>
           ) : upcomingGames.length > 0 ? (
             upcomingGames.map((game) => (
-              <Card key={game.id} style={styles.gameCard}>
-                <Card.Content>
-                  <View style={styles.gameCardHeader}>
-                    <Avatar.Icon 
-                      size={48} 
-                      icon={getSportIcon(game.sportType)} 
-                      style={styles.sportIcon} 
-                    />
-                    <View style={styles.gameCardTitleContainer}>
-                      <Text style={styles.gameCardTitle}>{game.title}</Text>
-                      <Text style={styles.gameCardDate}>{game.date}</Text>
-                    </View>
+              <Surface key={game.id} style={[styles.gameCard, game.isCancelled && styles.cancelledGameCard]}>
+                {game.isCancelled && (
+                  <View style={styles.cancelledBanner}>
+                    <Text style={styles.cancelledText}>CANCELLED</Text>
                   </View>
-                  
-                  <Text style={styles.gameCardLocation}>{game.location}</Text>
-                  <Text style={styles.gameCardParticipants}>
-                    {game.participants}/{game.totalSpots} participants
-                  </Text>
-                </Card.Content>
-                
-                <Card.Actions style={styles.gameCardActions}>
-                  <Button 
-                    mode="outlined" 
-                    style={styles.gameCardButton}
-                    onPress={() => navigation.navigate('GameDetails', { gameId: game.id })}
-                  >
-                    Details
-                  </Button>
-                  
-                  {game.isHosting && (
-                    <Button 
-                      mode="contained" 
-                      style={styles.gameCardButton}
-                      onPress={() => {
-                        // @ts-ignore - Navigation type issue workaround
-                        navigation.navigate('GameDetails', { 
-                          gameId: game.id,
-                          isManaging: true 
-                        });
-                      }}
+                )}
+                <View style={styles.gameCardHeader}>
+                  <View style={[styles.sportIconContainer, { backgroundColor: game.isCancelled ? COLORS.error : getSportColor(game.sportType) }]}>
+                    <MaterialCommunityIcons
+                      name={game.isCancelled ? 'cancel' : getSportIcon(game.sportType)}
+                      size={24}
+                      color={COLORS.background}
+                    />
+                  </View>
+                  <View style={styles.gameCardTitleContainer}>
+                    <Text style={[styles.gameCardTitle, game.isCancelled && styles.cancelledGameText]}>{game.title}</Text>
+                    <Text style={[styles.gameCardDate, game.isCancelled && styles.cancelledGameText]}>
+                      {game.date}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.gameCardDetails}>
+                  <View style={styles.gameDetailItem}>
+                    <MaterialCommunityIcons name="map-marker" size={16} color={game.isCancelled ? COLORS.error : COLORS.text} style={styles.detailIcon} />
+                    <Text style={[styles.gameCardLocation, game.isCancelled && styles.cancelledGameText]}>
+                      {game.location}
+                    </Text>
+                  </View>
+
+                  <View style={styles.gameDetailItem}>
+                    <MaterialCommunityIcons name="account-group" size={16} color={game.isCancelled ? COLORS.error : COLORS.text} style={styles.detailIcon} />
+                    <Text style={[styles.gameCardParticipants, game.isCancelled && styles.cancelledGameText]}>
+                      {game.participants}/{game.totalSpots} players
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.gameCardActions}>
+                  {game.isCancelled && game.isHosting ? (
+                    <Button
+                      mode="contained"
+                      onPress={() => handlePermanentDelete(game.id)}
+                      style={[styles.detailsButton, styles.deleteButton]}
+                      labelStyle={styles.detailsButtonLabel}
+                      icon={() => <MaterialCommunityIcons name="delete" size={16} color={COLORS.background} />}
                     >
-                      Manage
+                      Delete Permanently
+                    </Button>
+                  ) : (
+                    <Button
+                      mode="contained"
+                      onPress={() => {
+                        if (game.isHosting) {
+                          navigation.navigate('ManageGame', { gameId: game.id });
+                        } else {
+                          navigation.navigate('GameDetails', { gameId: game.id });
+                        }
+                      }}
+                      style={styles.detailsButton}
+                      labelStyle={styles.detailsButtonLabel}
+                      icon={() => <MaterialCommunityIcons name="arrow-right" size={16} color={COLORS.background} />}
+                      contentStyle={styles.detailsButtonContent}
+                    >
+                      Details
                     </Button>
                   )}
-                </Card.Actions>
-              </Card>
+                </View>
+              </Surface>
             ))
           ) : (
-            <Card style={styles.emptyCard}>
-              <Card.Content>
-                <Text style={styles.emptyCardText}>
-                  You don't have any upcoming games.
-                </Text>
-                <Text style={styles.emptyCardSubText}>
-                  Host a game or join one to get started!
-                </Text>
-              </Card.Content>
-            </Card>
+            <Surface style={styles.emptyCard}>
+              <MaterialCommunityIcons name="calendar-blank" size={48} color={COLORS.disabled} style={styles.emptyIcon} />
+              <Text style={styles.emptyCardText}>No upcoming games</Text>
+              <Text style={styles.emptyCardSubText}>
+                Host a new game or join existing ones!
+              </Text>
+              <Button
+                mode="contained"
+                onPress={() => navigation.navigate('CreateGame')}
+                style={styles.emptyCardButton}
+                labelStyle={styles.emptyCardButtonLabel}
+              >
+                Host a Game
+              </Button>
+            </Surface>
           )}
-        </View>
-        
+        </Surface>
+
+        {/* Test Realtime Section */}
+        <Surface style={styles.sectionContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Test Realtime Features</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('TestRealtime' as never)}>
+              <View style={styles.viewAllButton}>
+                <Text style={styles.viewAllText}>Open Test</Text>
+                <MaterialCommunityIcons name="chevron-right" size={16} color={COLORS.primary} />
+              </View>
+            </TouchableOpacity>
+          </View>
+          <Divider style={styles.divider} />
+
+          <Button
+            mode="contained"
+            onPress={() => navigation.navigate('TestRealtime' as never)}
+            style={{ marginVertical: SPACING.md }}
+            icon="access-point"
+          >
+            Test Realtime Functionality
+          </Button>
+        </Surface>
+
         {/* Popular Sports Section */}
-        <View style={styles.sectionContainer}>
+        <Surface style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Popular Sports</Text>
-            <Text 
-              style={styles.viewAllText}
-              onPress={() => navigation.navigate('FindGames')}
-            >
-              View All
-            </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('FindGames')}>
+              <View style={styles.viewAllButton}>
+                <Text style={styles.viewAllText}>View All</Text>
+                <MaterialCommunityIcons name="chevron-right" size={16} color={COLORS.primary} />
+              </View>
+            </TouchableOpacity>
           </View>
-          
+          <Divider style={styles.divider} />
+
           <View style={styles.sportsGrid}>
             {popularSports.map((sport) => (
-              <TouchableOpacity 
+              <TouchableOpacity
                 key={sport.id}
                 style={styles.sportItem}
                 onPress={() => navigation.navigate('FindGames', { sport: sport.name.toLowerCase() })}
               >
-                <Avatar.Icon 
-                  size={48} 
-                  icon={getSportIcon(sport.name.toLowerCase())} 
-                  style={styles.sportItemIcon} 
-                />
+                <View style={[styles.sportIconBg, { backgroundColor: getSportColor(sport.name) }]}>
+                  <MaterialCommunityIcons
+                    name={getSportIcon(sport.name.toLowerCase())}
+                    size={24}
+                    color={COLORS.background}
+                  />
+                </View>
                 <Text style={styles.sportItemText}>{sport.name}</Text>
               </TouchableOpacity>
             ))}
           </View>
-        </View>
+        </Surface>
       </ScrollView>
     </View>
   );
@@ -368,7 +584,41 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: SPACING.md,
   },
-  header: {
+  welcomeCard: {
+    marginBottom: SPACING.lg,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.md,
+    elevation: 2,
+  },
+  cancelledGameCard: {
+    borderColor: COLORS.error,
+    borderWidth: 1,
+    opacity: 0.8,
+  },
+  cancelledBanner: {
+    backgroundColor: COLORS.error,
+    padding: SPACING.xs,
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+    borderTopLeftRadius: BORDER_RADIUS.md,
+    borderTopRightRadius: BORDER_RADIUS.md,
+  },
+  cancelledText: {
+    color: COLORS.background,
+    fontWeight: 'bold',
+    fontSize: FONT_SIZES.sm,
+  },
+  cancelledGameText: {
+    color: COLORS.text,
+    opacity: 0.6,
+  },
+  deleteButton: {
+    backgroundColor: COLORS.error,
+  },
+  welcomeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: SPACING.md,
   },
   welcomeText: {
@@ -380,27 +630,40 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.md,
     color: COLORS.text,
     opacity: 0.7,
+    marginTop: SPACING.xs,
   },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.md,
-  },
-  actionButton: {
-    flex: 1,
-    marginRight: SPACING.sm,
+  profileAvatar: {
     backgroundColor: COLORS.primary,
   },
-  actionButtonContent: {
+  // Quick Actions Styles
+  quickActionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: SPACING.sm,
+  },
+  quickActionButton: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  actionIconContainer: {
+    width: 48,
     height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
   },
-  secondaryButton: {
-    marginLeft: SPACING.sm,
-    borderColor: COLORS.primary,
+  quickActionText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text,
+    marginTop: SPACING.xs,
   },
+  // Section Styles
   sectionContainer: {
     marginBottom: SPACING.lg,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.md,
+    elevation: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -413,27 +676,37 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.text,
   },
-  viewAllText: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text,
-    opacity: 0.7,
+  divider: {
+    marginBottom: SPACING.md,
+    height: 1,
   },
-  loadingContainer: {
-    padding: SPACING.lg,
+  viewAllButton: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
+  viewAllText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.primary,
+    marginRight: SPACING.xs,
+  },
+  // Game Card Styles
   gameCard: {
-    marginBottom: SPACING.sm,
-    borderRadius: 10,
-    elevation: 2,
+    marginBottom: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    elevation: 1,
   },
   gameCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.md,
   },
-  sportIcon: {
-    backgroundColor: COLORS.primary,
+  sportIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   gameCardTitleContainer: {
     marginLeft: SPACING.sm,
@@ -449,29 +722,51 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     opacity: 0.7,
   },
+  gameCardDetails: {
+    marginBottom: SPACING.md,
+  },
+  gameDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+  },
+  detailIcon: {
+    marginRight: SPACING.xs,
+  },
   gameCardLocation: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.text,
-    marginBottom: SPACING.xs,
+    flex: 1,
   },
   gameCardParticipants: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.text,
-    opacity: 0.7,
+    flex: 1,
   },
   gameCardActions: {
-    justifyContent: 'space-between',
+    alignItems: 'flex-end',
   },
-  gameCardButton: {
-    flex: 1,
-    margin: 4,
+  detailsButton: {
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.primary,
   },
-  emptyCard: {
-    marginBottom: SPACING.sm,
-    borderRadius: 10,
-    elevation: 1,
+  detailsButtonLabel: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.background,
+  },
+  detailsButtonContent: {
+    flexDirection: 'row',
     alignItems: 'center',
-    padding: SPACING.md,
+    height: 36,
+  },
+  // Empty Card Styles
+  emptyCard: {
+    alignItems: 'center',
+    padding: SPACING.lg,
+    marginVertical: SPACING.md,
+  },
+  emptyIcon: {
+    marginBottom: SPACING.md,
   },
   emptyCardText: {
     fontSize: FONT_SIZES.md,
@@ -485,25 +780,42 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     textAlign: 'center',
     marginTop: SPACING.xs,
+    marginBottom: SPACING.md,
   },
+  emptyCardButton: {
+    marginTop: SPACING.sm,
+  },
+  emptyCardButtonLabel: {
+    fontSize: FONT_SIZES.sm,
+  },
+  // Sports Grid Styles
   sportsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+    marginTop: SPACING.sm,
   },
   sportItem: {
     width: '20%',
     marginBottom: SPACING.md,
     alignItems: 'center',
   },
-  sportItemIcon: {
-    backgroundColor: COLORS.surface,
+  sportIconBg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: SPACING.xs,
   },
   sportItemText: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.text,
     textAlign: 'center',
+  },
+  loadingContainer: {
+    padding: SPACING.lg,
+    alignItems: 'center',
   },
 });
 

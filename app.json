@@ -48,6 +48,7 @@
         }
       ]
     ],
-    "scheme": "sportea"
+    "scheme": "sportea",
+    "newArchEnabled": true
   }
 } 

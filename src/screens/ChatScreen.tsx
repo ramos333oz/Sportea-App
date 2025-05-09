@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
-import { Text, TextInput, Button, Avatar, Surface, IconButton, Divider } from 'react-native-paper';
+import { StyleSheet, View, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
+import { Text, TextInput, Button, Avatar, Surface, IconButton, Divider, Dialog, Portal } from 'react-native-paper';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { RouteProp } from '@react-navigation/native';
 import { AppStackParamList } from '../navigation/AppNavigator';
@@ -8,6 +8,7 @@ import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants/theme';
 import { supabase } from '../config/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import matchmakingService from '../services/matchmakingService';
 
 type ChatScreenRouteProp = RouteProp<AppStackParamList, 'Chat'>;
 
@@ -37,6 +38,8 @@ const ChatScreen = () => {
   const [matchDetails, setMatchDetails] = useState<any>(null);
   const [otherUser, setOtherUser] = useState<ChatUser | null>(null);
   const [subscription, setSubscription] = useState<any>(null);
+  const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const { matchId } = route.params;
 
@@ -46,23 +49,31 @@ const ChatScreen = () => {
       navigation.setOptions({
         headerTitle: () => (
           <View style={styles.headerTitle}>
-            <Avatar.Image 
-              size={36} 
-              source={{ uri: otherUser.avatar_url || 'https://ui-avatars.com/api/?name=' + otherUser.username }} 
+            <Avatar.Image
+              size={36}
+              source={{ uri: otherUser.avatar_url || 'https://ui-avatars.com/api/?name=' + otherUser.username }}
             />
             <Text style={styles.headerText}>{otherUser.username}</Text>
           </View>
         ),
         headerRight: () => (
-          <IconButton
-            icon="information-outline"
-            size={24}
-            onPress={() => {
-              if (matchDetails?.game_id) {
-                navigation.navigate('GameDetails', { gameId: matchDetails.game_id });
-              }
-            }}
-          />
+          <View style={{ flexDirection: 'row' }}>
+            {matchDetails?.game_id && (
+              <IconButton
+                icon="information-outline"
+                size={24}
+                onPress={() => {
+                  navigation.navigate('GameDetails', { gameId: matchDetails.game_id });
+                }}
+              />
+            )}
+            <IconButton
+              icon="delete-outline"
+              size={24}
+              color={COLORS.error}
+              onPress={() => setDeleteDialogVisible(true)}
+            />
+          </View>
         ),
       });
     }
@@ -73,7 +84,7 @@ const ChatScreen = () => {
     const loadMatchAndMessages = async () => {
       try {
         setLoading(true);
-        
+
         // Get match details
         const { data: matchData, error: matchError } = await supabase
           .from('matches')
@@ -85,35 +96,35 @@ const ChatScreen = () => {
           `)
           .eq('id', matchId)
           .single();
-          
+
         if (matchError) throw matchError;
-        
+
         setMatchDetails(matchData);
-        
+
         // Determine which user is the other user
-        const otherUserData = matchData.user_id === user?.id 
-          ? matchData.matched_user 
+        const otherUserData = matchData.user_id === user?.id
+          ? matchData.matched_user
           : matchData.initiator;
-          
+
         setOtherUser(otherUserData);
-        
+
         // Get messages
         const { data: messagesData, error: messagesError } = await supabase
           .from('chat_messages')
           .select('*')
           .eq('match_id', matchId)
           .order('created_at', { ascending: true });
-          
+
         if (messagesError) throw messagesError;
-        
+
         setMessages(messagesData || []);
-        
+
         // Mark messages as read
         if (messagesData && messagesData.length > 0) {
           const unreadMessages = messagesData.filter(
             msg => !msg.read && msg.sender_id !== user?.id
           );
-          
+
           if (unreadMessages.length > 0) {
             await supabase
               .from('chat_messages')
@@ -127,9 +138,9 @@ const ChatScreen = () => {
         setLoading(false);
       }
     };
-    
+
     loadMatchAndMessages();
-    
+
     // Set up real-time subscription
     const messageSubscription = supabase
       .channel('chat-messages')
@@ -140,10 +151,10 @@ const ChatScreen = () => {
         filter: `match_id=eq.${matchId}`,
       }, (payload) => {
         const newMsg = payload.new as Message;
-        
+
         // Add message to state
         setMessages(current => [...current, newMsg]);
-        
+
         // Mark as read if from other user
         if (newMsg.sender_id !== user?.id) {
           supabase
@@ -154,9 +165,9 @@ const ChatScreen = () => {
         }
       })
       .subscribe();
-      
+
     setSubscription(messageSubscription);
-    
+
     // Cleanup subscription
     return () => {
       if (subscription) {
@@ -177,10 +188,10 @@ const ChatScreen = () => {
   // Send a new message
   const sendMessage = async () => {
     if (!newMessage.trim() || !user?.id || !matchId) return;
-    
+
     try {
       setSending(true);
-      
+
       const { error } = await supabase
         .from('chat_messages')
         .insert({
@@ -189,9 +200,9 @@ const ChatScreen = () => {
           content: newMessage.trim(),
           read: false,
         });
-        
+
       if (error) throw error;
-      
+
       setNewMessage('');
     } catch (error) {
       console.error('Error sending message:', error);
@@ -219,7 +230,7 @@ const ChatScreen = () => {
   // Render message item
   const renderMessage = ({ item }: { item: Message }) => {
     const isFromMe = item.sender_id === user?.id;
-    
+
     return (
       <View style={[styles.messageContainer, isFromMe ? styles.myMessage : styles.theirMessage]}>
         <Surface style={[styles.messageBubble, isFromMe ? styles.myBubble : styles.theirBubble]}>
@@ -232,6 +243,38 @@ const ChatScreen = () => {
         </Surface>
       </View>
     );
+  };
+
+  // Handle match deletion
+  const handleDeleteMatch = async () => {
+    try {
+      setDeleting(true);
+
+      // Initialize matchmaking service if needed
+      if (!matchmakingService.isInitialized && user?.id) {
+        await matchmakingService.initialize(user.id);
+      }
+
+      // Delete the match
+      const result = await matchmakingService.deleteMatch(matchId);
+
+      if (result.success) {
+        Alert.alert(
+          'Success',
+          'Match and conversation deleted successfully',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      } else {
+        Alert.alert('Error', result.error || 'Failed to delete match');
+        setDeleteDialogVisible(false);
+        setDeleting(false);
+      }
+    } catch (error) {
+      console.error('Error deleting match:', error);
+      Alert.alert('Error', 'An unexpected error occurred');
+      setDeleteDialogVisible(false);
+      setDeleting(false);
+    }
   };
 
   return (
@@ -255,9 +298,9 @@ const ChatScreen = () => {
           contentContainerStyle={styles.messagesContainer}
         />
       )}
-      
+
       <Divider />
-      
+
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.input}
@@ -277,6 +320,28 @@ const ChatScreen = () => {
           style={styles.sendButton}
         />
       </View>
+
+      {/* Delete Match Confirmation Dialog */}
+      <Portal>
+        <Dialog visible={deleteDialogVisible} onDismiss={() => setDeleteDialogVisible(false)}>
+          <Dialog.Title>Delete Match</Dialog.Title>
+          <Dialog.Content>
+            <Text>Are you sure you want to delete this match and all messages? This action cannot be undone.</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setDeleteDialogVisible(false)}>Cancel</Button>
+            <Button
+              mode="contained"
+              color={COLORS.error}
+              loading={deleting}
+              disabled={deleting}
+              onPress={handleDeleteMatch}
+            >
+              Delete
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </KeyboardAvoidingView>
   );
 };

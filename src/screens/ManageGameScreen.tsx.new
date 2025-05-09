@@ -91,13 +91,12 @@ const ManageGameScreen = () => {
       
       console.log('Fetching game details for ID:', gameId);
       
-      // Fetch game data with host profile information
+      // Fetch game data
       const { data: gameData, error } = await supabase
         .from('games')
         .select(`
           *,
-          participants:game_participants(*),
-          host:profiles!games_host_id_fkey(*)
+          participants:game_participants(*)
         `)
         .eq('id', gameId)
         .single();
@@ -109,23 +108,6 @@ const ManageGameScreen = () => {
       }
       
       console.log('Game data received:', gameData);
-      
-      // If host profile isn't available through the join, fetch it separately
-      if (!gameData.host && gameData.host_id) {
-        console.log('Fetching host profile separately for host_id:', gameData.host_id);
-        const { data: hostData, error: hostError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', gameData.host_id)
-          .single();
-          
-        if (!hostError && hostData) {
-          console.log('Host profile fetched:', hostData);
-          gameData.host = hostData;
-        } else {
-          console.error('Error fetching host profile:', hostError);
-        }
-      }
       
       // Set game data
       setGame(gameData);
@@ -159,71 +141,52 @@ const ManageGameScreen = () => {
               
               console.log('Starting deletion process for game:', gameId);
               
-              // First try to delete participants one by one
-              console.log('Step 1: Getting all participants');
-              const { data: participants } = await supabase
+              // Step 1: First delete all participants
+              console.log('Step 1: Deleting all participants first');
+              const { error: participantsError } = await supabase
                 .from('game_participants')
-                .select('id')
+                .delete()
                 .eq('game_id', gameId);
               
-              if (participants && participants.length > 0) {
-                console.log(`Step 2: Deleting ${participants.length} participants`);
-                for (const participant of participants) {
-                  await supabase
-                    .from('game_participants')
-                    .delete()
-                    .eq('id', participant.id);
-                }
+              if (participantsError) {
+                console.error('Error deleting participants:', participantsError);
+                Alert.alert(
+                  'Error',
+                  'Failed to delete game participants. Please try again.',
+                  [{ text: 'OK' }]
+                );
+                setDeleting(false);
+                return;
               }
               
-              // Clean up related tables
-              console.log('Step 3: Cleaning up related tables');
+              // Step 2: Delete from other related tables
+              console.log('Step 2: Deleting from related tables');
               await supabase.from('matchmaking_queue').delete().eq('game_id', gameId);
               await supabase.from('matches').delete().eq('game_id', gameId);
               
-              // Try to delete the game
-              console.log('Step 4: Attempting to delete the game');
-              const { error: deleteError } = await supabase
+              // Step 3: Now delete the game itself
+              console.log('Step 3: Deleting the game itself');
+              const { error: gameError } = await supabase
                 .from('games')
                 .delete()
                 .eq('id', gameId);
               
-              if (deleteError) {
-                console.log('Physical deletion failed, using soft delete approach');
-                
-                // If physical deletion fails, mark as cancelled instead
-                const { error: updateError } = await supabase
-                  .from('games')
-                  .update({ 
-                    status: 'cancelled',
-                    title: `[CANCELLED] ${game?.title || ''}`,
-                    required_players: 0
-                  })
-                  .eq('id', gameId);
-                
-                if (updateError) {
-                  console.error('Error marking game as cancelled:', updateError);
-                  Alert.alert(
-                    'Error',
-                    'Failed to delete game. Please try again.',
-                    [{ text: 'OK' }]
-                  );
-                  setDeleting(false);
-                  return;
-                }
+              if (gameError) {
+                console.error('Error deleting game:', gameError);
+                Alert.alert(
+                  'Error',
+                  `Failed to delete the game: ${gameError.message}`,
+                  [{ text: 'OK' }]
+                );
+                setDeleting(false);
+                return;
               }
               
-              console.log('Game successfully deleted/cancelled');
+              console.log('Game successfully deleted');
               Alert.alert(
                 'Success', 
                 'Game has been deleted',
-                [{ 
-                  text: 'OK', 
-                  onPress: () => {
-                    // Navigate back and refresh the dashboard to reflect the changes
-                    navigation.goBack();
-                  }
-                }]
+                [{ text: 'OK', onPress: () => navigation.goBack() }]
               );
             } catch (error: any) {
               console.error('Error in handleDeleteGame:', error);

@@ -241,12 +241,26 @@ export const gameUtils = {
   // Delete a game
   deleteGame: async (gameId) => {
     try {
+      // First delete all game participants
+      const { error: participantsError } = await supabase
+        .from(TABLES.GAME_PARTICIPANTS)
+        .delete()
+        .eq('game_id', gameId);
+      
+      if (participantsError) {
+        console.error('Error deleting game participants:', participantsError);
+        // Continue with game deletion even if participants deletion fails
+      }
+      
+      // Then delete the game itself
       const { error } = await supabase
         .from(TABLES.GAMES)
         .delete()
         .eq('id', gameId);
       
       if (error) throw error;
+      
+      console.log('Game and participants successfully deleted');
       return { error: null };
     } catch (error) {
       console.error('Error deleting game:', error);

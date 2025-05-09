@@ -93,13 +93,6 @@ const GameDetailsScreen = ({ route, navigation }: GameDetailsScreenProps) => {
     fetchGameDetails();
     fetchParticipants();
   }, [gameId]);
-  
-  // Effect to check if user is the host
-  useEffect(() => {
-    if (game && userId) {
-      setIsHost(game.host_id === userId);
-    }
-  }, [game, userId]);
 
   useEffect(() => {
     // Create a channel for this specific game
@@ -162,13 +155,12 @@ const GameDetailsScreen = ({ route, navigation }: GameDetailsScreenProps) => {
       
       console.log('Fetching game details for ID:', gameId);
       
-      // Fetch game data with host profile information
+      // Fetch game data
       const { data: gameData, error } = await supabase
         .from('games')
         .select(`
           *,
-          participants:game_participants(*),
-          host:profiles!games_host_id_fkey(*)
+          participants:game_participants(*)
         `)
         .eq('id', gameId)
         .single();
@@ -180,23 +172,6 @@ const GameDetailsScreen = ({ route, navigation }: GameDetailsScreenProps) => {
       }
       
       console.log('Game data received:', gameData);
-      
-      // If host profile isn't available through the join, fetch it separately
-      if (!gameData.host && gameData.host_id) {
-        console.log('Fetching host profile separately for host_id:', gameData.host_id);
-        const { data: hostData, error: hostError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', gameData.host_id)
-          .single();
-          
-        if (!hostError && hostData) {
-          console.log('Host profile fetched:', hostData);
-          gameData.host = hostData;
-        } else {
-          console.error('Error fetching host profile:', hostError);
-        }
-      }
       
       // Set game data
       setGame(gameData);

@@ -11,7 +11,9 @@ export default function App() {
     <SafeAreaProvider>
       <PaperProvider theme={theme}>
         <AuthProvider>
-          <RootNavigator />
+          <NavigationContainer>
+            <RootNavigator />
+          </NavigationContainer>
         </AuthProvider>
       </PaperProvider>
     </SafeAreaProvider>

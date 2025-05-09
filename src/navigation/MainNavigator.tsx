@@ -8,6 +8,8 @@ import ProfileScreen from '../screens/ProfileScreen';
 import MatchmakingScreen from '../screens/MatchmakingScreen';
 import GameDetailsScreen from '../screens/GameDetailsScreen';
 import ManageGameScreen from '../screens/ManageGameScreen';
+import RealtimeGamesScreen from '../screens/RealtimeGamesScreen';
+import TestRealtimeScreen from '../screens/TestRealtimeScreen';
 import { COLORS } from '../constants/theme';
 import { createStackNavigator } from '@react-navigation/stack';
 
@@ -21,6 +23,7 @@ export type MainTabParamList = {
   FindGames: undefined;
   CreateGame: undefined;
   Matchmaking: undefined;
+  RealtimeGames: undefined;
   Profile: undefined;
 };
 
@@ -29,6 +32,7 @@ export type MainStackParamList = {
   MainTabs: undefined;
   GameDetails: { gameId: string };
   ManageGame: { gameId: string };
+  TestRealtime: undefined;
 };
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -56,7 +60,7 @@ const TabNavigator = () => {
           ),
         }}
       />
-      
+
       <Tab.Screen
         name="FindGames"
         component={FindGamesScreen}
@@ -67,7 +71,7 @@ const TabNavigator = () => {
           ),
         }}
       />
-      
+
       <Tab.Screen
         name="CreateGame"
         component={CreateGameScreen}
@@ -78,7 +82,7 @@ const TabNavigator = () => {
           ),
         }}
       />
-      
+
       <Tab.Screen
         name="Matchmaking"
         component={MatchmakingScreen}
@@ -89,7 +93,18 @@ const TabNavigator = () => {
           ),
         }}
       />
-      
+
+      <Tab.Screen
+        name="RealtimeGames"
+        component={RealtimeGamesScreen}
+        options={{
+          tabBarLabel: 'Live',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="access-point" color={color} size={size} />
+          ),
+        }}
+      />
+
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
@@ -109,15 +124,20 @@ const MainNavigator = () => {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MainTabs" component={TabNavigator} />
-      <Stack.Screen 
-        name="GameDetails" 
+      <Stack.Screen
+        name="GameDetails"
         component={GameDetailsScreen}
         options={{ headerShown: true, title: 'Game Details' }}
       />
-      <Stack.Screen 
-        name="ManageGame" 
+      <Stack.Screen
+        name="ManageGame"
         component={ManageGameScreen}
         options={{ headerShown: true, title: 'Manage Game' }}
+      />
+      <Stack.Screen
+        name="TestRealtime"
+        component={TestRealtimeScreen}
+        options={{ headerShown: true, title: 'Test Realtime' }}
       />
     </Stack.Navigator>
   );

@@ -1,7 +1,7 @@
 # Sportea App Development Roadmap
 
 ## Project Overview
-Sportea is a mobile application for sports matchmaking at the university level. It allows students to find and join games hosted by other users, host their own games, and potentially integrate with the university's existing booking system (bsu.uitm.edu.my).
+Sportea is a mobile application for sports matchmaking at the university level. It allows students to find and join games hosted by other users and host their own games. This is a simple mobile application that is intended to be used for students to discover new teammmates as well as upcoming games that they could join themselves into. With the existances of this mobile application, students are able to seamlessly connect themselves with others, without needing to reach-out separately. The core of this mobile app us to allow students to host a match or join a match.
 
 ## Technology Stack
 - **Frontend**: React Native with Expo
@@ -12,127 +12,134 @@ Sportea is a mobile application for sports matchmaking at the university level. 
 
 ### Week 1: Project Initialization
 - [x] Create GitHub repository
-- [ ] Initialize React Native Expo project with TypeScript
-- [ ] Set up project structure following React Native best practices
-- [ ] Install essential dependencies (React Navigation, UI libraries)
-- [ ] Set up Supabase project and configure connection
+- [x] Initialize React Native Expo project with TypeScript
+- [x] Set up project structure following React Native best practices
+- [x] Install essential dependencies (React Navigation, UI libraries)
+- [x] Set up Supabase project and configure connection
 
 ### Week 2: Authentication System
-- [ ] Implement user registration with university email validation
-- [ ] Implement login functionality
-- [ ] Create protected routes/screens
-- [ ] Implement persistent authentication
-- [ ] Design and implement onboarding flow
+- [x] Implement user registration with university email validation
+- [x] Implement login functionality
+- [x] Create protected routes/screens
+- [x] Implement persistent authentication
+- [x] Design and implement onboarding flow
 
 ## Phase 2: User Profile and Core Screens (Weeks 3-4)
 
 ### Week 3: User Profile Implementation
-- [ ] Design and implement user profile creation flow
-- [ ] Implement sports preferences selection
-- [ ] Implement skill level specification
-- [ ] Implement availability schedule setting
-- [ ] Create profile viewing and editing screens
+- [x] Design and implement user profile creation flow
+- [x] Implement sports preferences selection
+- [x] Implement skill level specification
+- [x] Implement availability schedule setting
+- [x] Create profile viewing and editing screens
 
 ### Week 4: Dashboard and Navigation
-- [ ] Design and implement main dashboard
-- [ ] Set up bottom tab navigation
-- [ ] Implement notification center UI
-- [ ] Create settings screen
-- [ ] Implement theme support (light/dark mode)
+- [x] Design and implement main dashboard
+- [x] Set up bottom tab navigation
+- [x] Implement notification center UI
+- [x] Create settings screen
+- [x] Implement theme support (light/dark mode)
 
 ## Phase 3: Game Management Features (Weeks 5-7)
 
 ### Week 5: Browse Games Feature
-- [ ] Design and implement game browsing UI
-- [ ] Implement filtering system (by sport, time, skill level, etc.)
-- [ ] Create game details view
-- [ ] Set up game data models in Supabase
-- [ ] Implement API service for game retrieval
+- [x] Design and implement game browsing UI
+- [x] Implement filtering system (by sport, time, skill level, etc.)
+- [x] Create game details view
+- [x] Set up game data models in Supabase
+- [x] Implement API service for game retrieval
 
 ### Week 6: Game Creation Feature
-- [ ] Design and implement game creation flow
-- [ ] Create location selection interface
-- [ ] Implement date/time picker
-- [ ] Design player requirements specification UI
-- [ ] Implement game publishing to Supabase
+- [x] Design and implement game creation flow
+- [x] Create location selection interface
+- [x] Implement date/time picker
+- [x] Design player requirements specification UI
+- [x] Implement game publishing to Supabase
 
 ### Week 7: Game Participation & Management
-- [ ] Implement join request system
-- [ ] Create host management dashboard
-- [ ] Implement request approval/rejection functionality
-- [ ] Design and implement player list management
-- [ ] Create game editing and cancellation features
+- [x] Implement join request system
+- [x] Create host management dashboard
+- [x] Implement request approval/rejection functionality
+- [x] Design and implement player list management
+- [x] Create game editing and cancellation features
 
 ## Phase 4: Matchmaking System (Weeks 8-9)
 
 ### Week 8: Basic Matchmaking Algorithm
-- [ ] Design database queries for matchmaking
-- [ ] Implement suggested games based on user preferences
-- [ ] Create UI for matchmaking suggestions
-- [ ] Implement player-to-player suggestions
-- [ ] Create invitation system
+- [x] Design database queries for matchmaking
+- [x] Implement suggested games based on user preferences
+- [x] Create UI for matchmaking suggestions
+- [x] Create invitation system
 
 ### Week 9: Advanced Matchmaking Features
-- [ ] Implement skill-based matchmaking
-- [ ] Create availability-based suggestions
-- [ ] Implement location proximity filtering
-- [ ] Add historical preference tracking
-- [ ] Create recommendation improvement system
+- [x] Implement skill-based matchmaking
+- [x] Create availability-based suggestions
+- [x] Implement location proximity filtering
+- [x] Add historical preference tracking
+- [x] Create recommendation improvement system
+
+### Week 9.5: Match Management Enhancements
+- [x] Implement match deletion functionality
+- [x] Add confirmation dialogs for match actions
+- [x] Ensure proper cleanup of related data
+- [x] Implement proper error handling for match operations
 
 ## Phase 5: Notifications and Realtime Features (Weeks 10-11)
 
 ### Week 10: Notification System
-- [ ] Set up Supabase realtime subscriptions
-- [ ] Implement in-app notification UI
-- [ ] Create notification management system
-- [ ] Implement push notification setup (Expo)
-- [ ] Design different notification types UI
+- [x] Set up Supabase realtime subscriptions
+- [x] Implement in-app notification UI
+- [x] Create notification management system
+- [x] Implement push notification setup (Expo)
+- [x] Design different notification types UI
 
 ### Week 11: Realtime Updates
-- [ ] Implement realtime game status updates
-- [ ] Create realtime player list updates
-- [ ] Implement realtime chat (if time permits)
-- [ ] Add typing indicators (if implementing chat)
-- [ ] Test realtime performance
+- [x] Implement realtime game status updates
+- [x] Create realtime player list updates
+- [x] Enhance realtime game hosting display
+- [x] Implement detailed event handling for realtime updates
+- [x] Add proper error handling for realtime subscriptions
 
 ## Phase 6: Court Booking System (Weeks 12-13)
 
 ### Week 12: Court Management
-- [ ] Design court database schema
-- [ ] Implement court browsing UI
-- [ ] Create court availability visualization
-- [ ] Implement court filtering system
-- [ ] Design booking flow mockup (for future integration)
+- [x] Design court database schema
+- [x] Implement court browsing UI
+- [x] Create court availability visualization
+- [x] Implement court filtering system
+- [x] Design booking flow mockup (for future integration)
 
 ### Week 13: Booking System UI
-- [ ] Implement booking UI components
-- [ ] Create booking confirmation flow
-- [ ] Implement booking management screens
-- [ ] Design system for future API integration
-- [ ] Implement booking cancellation UI
+- [x] Implement booking UI components
+- [x] Create booking confirmation flow
+- [x] Implement booking management screens
+- [x] Design system for future API integration
+- [x] Implement booking cancellation UI
 
 ## Phase 7: Testing, Optimization and Deployment (Weeks 14-16)
 
 ### Week 14: Testing
-- [ ] Implement unit tests for critical components
-- [ ] Conduct user testing with university students
-- [ ] Fix identified bugs and issues
-- [ ] Optimize app performance
-- [ ] Conduct cross-device testing
+- [x] Implement unit tests for critical components
+- [x] Conduct user testing with university students
+- [x] Fix identified bugs and issues
+  - [x] Fix match deletion functionality
+  - [x] Enhance realtime subscription for game hosting
+- [x] Optimize app performance
+- [x] Conduct cross-device testing
 
 ### Week 15: Final Refinements
-- [ ] Polish UI/UX
-- [ ] Implement feedback from user testing
-- [ ] Create app screenshots for store listings
-- [ ] Write app description and marketing materials
-- [ ] Prepare privacy policy and terms of service
+- [x] Polish UI/UX
+- [x] Implement feedback from user testing
+- [x] Create app screenshots for store listings
+- [x] Write app description and marketing materials
+- [x] Prepare privacy policy and terms of service
 
 ### Week 16: Deployment
-- [ ] Generate production build
-- [ ] Deploy Supabase backend to production
-- [ ] Configure production environment variables
-- [ ] Prepare for app store submission
-- [ ] Create demo video and presentation for final year project
+- [x] Generate production build
+- [x] Deploy Supabase backend to production
+- [x] Configure production environment variables
+- [x] Prepare for app store submission
+- [x] Create demo video and presentation for final year project
 
 ## Database Structure
 
@@ -255,4 +262,4 @@ Sportea is a mobile application for sports matchmaking at the university level. 
 4. **Additional Features**
    - Equipment sharing/rental
    - Coach/training session booking
-   - Sports events calendar 
+   - Sports events calendar

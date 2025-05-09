@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, Alert, Platform, Animated, Dimensions } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, Platform, Animated, Dimensions, RefreshControl } from 'react-native';
 import { Text, Button, Card, Avatar, Chip, ProgressBar, Title, Paragraph, ActivityIndicator, IconButton, Surface } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -47,8 +47,10 @@ const MatchmakingScreen = () => {
   });
   const [potentialMatches, setPotentialMatches] = useState<any[]>([]);
   const [currentMatch, setCurrentMatch] = useState<any>(null);
+  const [availableGames, setAvailableGames] = useState<any[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [searchTime, setSearchTime] = useState(0);
+  const [connectionStatus, setConnectionStatus] = useState('connecting');
   const searchTimeInterval = useRef<NodeJS.Timeout | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const screenWidth = Dimensions.get('window').width;
@@ -76,6 +78,8 @@ const MatchmakingScreen = () => {
     const initialize = async () => {
       if (user) {
         try {
+          setConnectionStatus('connecting');
+          
           // Get user profile
           const { data, error } = await supabase
             .from('profiles')
@@ -96,13 +100,27 @@ const MatchmakingScreen = () => {
           const initialized = await matchmakingService.initialize(user.id);
           if (!initialized) {
             Alert.alert('Error', 'Failed to initialize matchmaking service');
+            setConnectionStatus('error');
+            return;
           }
           
           // Register match callback
           matchmakingService.onMatch(handleMatchUpdate);
+          
+          // Register game update callback
+          matchmakingService.onGameUpdate(handleGameUpdate);
+          
+          // Register queue update callback
+          matchmakingService.onQueueUpdate(handleQueueUpdate);
+          
+          // Fetch available games
+          fetchAvailableGames();
+          
+          setConnectionStatus('connected');
         } catch (error) {
           console.error('Error initializing matchmaking:', error);
           Alert.alert('Error', 'Failed to load user profile');
+          setConnectionStatus('error');
         } finally {
           setIsInitializing(false);
         }
@@ -116,7 +134,13 @@ const MatchmakingScreen = () => {
       if (searchTimeInterval.current) {
         clearInterval(searchTimeInterval.current);
       }
+      
+      // Unregister all callbacks
       matchmakingService.offMatch(handleMatchUpdate);
+      matchmakingService.offGameUpdate(handleGameUpdate);
+      matchmakingService.offQueueUpdate(handleQueueUpdate);
+      
+      // Stop matchmaking
       matchmakingService.stopMatchmaking();
     };
   }, [user]);
@@ -138,6 +162,48 @@ const MatchmakingScreen = () => {
     setIsSearching(false);
     if (searchTimeInterval.current) {
       clearInterval(searchTimeInterval.current);
+    }
+  };
+  
+  // Handle game update from service
+  const handleGameUpdate = (gameData: any) => {
+    console.log('Game update received:', gameData);
+    
+    // Update available games list
+    fetchAvailableGames();
+  };
+  
+  // Handle queue update from service
+  const handleQueueUpdate = (queueData: any) => {
+    console.log('Queue update received:', queueData);
+    
+    // If status changed to inactive, stop searching
+    if (queueData?.status === 'inactive' && isSearching) {
+      setIsSearching(false);
+      if (searchTimeInterval.current) {
+        clearInterval(searchTimeInterval.current);
+      }
+    }
+  };
+  
+  // Fetch available games
+  const fetchAvailableGames = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('games')
+        .select(`
+          *,
+          participants:game_participants(*)
+        `)
+        .eq('status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(10);
+        
+      if (error) throw error;
+      
+      setAvailableGames(data || []);
+    } catch (error) {
+      console.error('Error fetching available games:', error);
     }
   };
 
@@ -202,23 +268,49 @@ const MatchmakingScreen = () => {
     }
   };
 
-  // Reject a match
-  const rejectMatch = async (matchId: string) => {
+  // Decline a match
+  const declineMatch = async (matchId: string) => {
     try {
       const { error } = await supabase
         .from('matches')
-        .update({ status: 'rejected' })
+        .update({ status: 'declined' })
         .eq('id', matchId);
         
       if (error) throw error;
       
       setCurrentMatch(null);
-      // Restart matchmaking
-      toggleMatchmaking();
     } catch (error) {
-      console.error('Error rejecting match:', error);
-      Alert.alert('Error', 'Failed to reject match');
+      console.error('Error declining match:', error);
+      Alert.alert('Error', 'Failed to decline match');
     }
+  };
+  
+  // Join a game
+  const joinGame = async (gameId: string) => {
+    try {
+      const result: { success: boolean; error?: any; message?: string } = await matchmakingService.joinGame(gameId);
+      
+      if (result.success) {
+        Alert.alert('Success', 'You have joined the game!');
+        fetchAvailableGames();
+        
+        // Navigate to game details
+        navigation.navigate('GameDetails', { gameId });
+      } else {
+        Alert.alert('Error', result.error?.toString() || 'Failed to join the game');
+      }
+    } catch (error) {
+      console.error('Error joining game:', error);
+      Alert.alert('Error', 'Failed to join the game');
+    }
+  };
+
+  // Handle preference change
+  const handlePreferenceChange = (key: string, value: any) => {
+    setPreferences(prev => ({
+      ...prev,
+      [key]: value,
+    }));
   };
 
   // Format search time
@@ -228,7 +320,140 @@ const MatchmakingScreen = () => {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  // Render loading state
+  // Render connection status
+  const renderConnectionStatus = () => {
+    let color = COLORS.disabled;
+    let text = 'Connecting...';
+    
+    switch (connectionStatus) {
+      case 'connected':
+        color = COLORS.success;
+        text = 'Connected';
+        break;
+      case 'error':
+        color = COLORS.error;
+        text = 'Connection Error';
+        break;
+      default:
+        color = COLORS.warning;
+        text = 'Connecting...';
+    }
+    
+    return (
+      <View style={styles.connectionStatus}>
+        <View style={[styles.statusIndicator, { backgroundColor: color }]} />
+        <Text style={styles.statusText}>{text}</Text>
+      </View>
+    );
+  };
+
+  // Render match request
+  const renderMatchRequest = () => {
+    if (!currentMatch) return null;
+    
+    return (
+      <Card style={styles.matchRequestCard}>
+        <Card.Title title="Match Request" />
+        <Card.Content>
+          <Text style={styles.matchText}>
+            A player wants to match with you for {currentMatch.sport || 'a game'}!
+          </Text>
+          <View style={styles.matchActions}>
+            <Button
+              mode="contained"
+              style={[styles.matchButton, { backgroundColor: COLORS.success }]}
+              onPress={() => acceptMatch(currentMatch.id)}
+            >
+              Accept
+            </Button>
+            <Button
+              mode="outlined"
+              style={styles.matchButton}
+              onPress={() => declineMatch(currentMatch.id)}
+            >
+              Decline
+            </Button>
+          </View>
+        </Card.Content>
+      </Card>
+    );
+  };
+
+  // Render available games
+  const renderAvailableGames = () => {
+    if (availableGames.length === 0) {
+      return (
+        <Card style={styles.noGamesCard}>
+          <Card.Content>
+            <Text style={styles.noGamesText}>No games available at the moment</Text>
+            <Text style={styles.noGamesSubtext}>Try creating a new game or adjusting your preferences</Text>
+          </Card.Content>
+        </Card>
+      );
+    }
+    
+    return availableGames.map(game => {
+      const participantsCount = game.participants?.length || 0;
+      const spotsLeft = game.required_players - participantsCount;
+      const isUserParticipant = game.participants?.some((p: any) => p.user_id === user?.id) || false;
+      const isUserHost = game.host_id === user?.id;
+      
+      return (
+        <Card key={game.id} style={styles.gameCard}>
+          <Card.Title
+            title={game.title}
+            subtitle={`${game.sport} • ${game.skill_level || 'All levels'}`}
+            left={(props) => (
+              <Avatar.Icon
+                {...props}
+                icon={getSportIcon(game.sport)}
+                style={{ backgroundColor: COLORS.primary }}
+              />
+            )}
+          />
+          <Card.Content>
+            <View style={styles.gameDetails}>
+              <View style={styles.gameDetail}>
+                <MaterialCommunityIcons name="calendar" size={16} color={COLORS.text} />
+                <Text style={styles.gameDetailText}>
+                  {new Date(game.date).toLocaleDateString()}
+                </Text>
+              </View>
+              <View style={styles.gameDetail}>
+                <MaterialCommunityIcons name="account-group" size={16} color={COLORS.text} />
+                <Text style={styles.gameDetailText}>
+                  {participantsCount}/{game.required_players} players
+                </Text>
+              </View>
+            </View>
+          </Card.Content>
+          <Card.Actions>
+            <Button
+              mode="outlined"
+              onPress={() => navigation.navigate('GameDetails', { gameId: game.id })}
+            >
+              Details
+            </Button>
+            {!isUserParticipant && !isUserHost && (
+              <Button
+                mode="contained"
+                onPress={() => joinGame(game.id)}
+                disabled={spotsLeft <= 0}
+              >
+                {spotsLeft <= 0 ? 'Full' : 'Join'}
+              </Button>
+            )}
+            {(isUserParticipant || isUserHost) && (
+              <Chip mode="outlined" style={{ backgroundColor: COLORS.success, marginLeft: SPACING.sm }}>
+                {isUserHost ? 'Hosting' : 'Joined'}
+              </Chip>
+            )}
+          </Card.Actions>
+        </Card>
+      );
+    });
+  };
+
   if (isInitializing) {
     return (
       <View style={styles.loadingContainer}>
@@ -238,214 +463,181 @@ const MatchmakingScreen = () => {
     );
   }
 
-  // Render match found
-  if (currentMatch) {
-    const matchedUser = currentMatch.matched_user_id === user?.id 
-      ? { id: currentMatch.user_id } 
-      : { id: currentMatch.matched_user_id };
+  return (
+    <View style={styles.container}>
+      {renderConnectionStatus()}
       
-    return (
-      <View style={styles.container}>
-        <Card style={styles.matchCard}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={false}
+            onRefresh={fetchAvailableGames}
+            colors={[COLORS.primary]}
+          />
+        }
+      >
+        {/* Match Request */}
+        {renderMatchRequest()}
+        
+        {/* Matchmaking Section */}
+        <Card style={styles.matchmakingCard}>
+          <Card.Title title="Find Players" />
           <Card.Content>
-            <View style={styles.matchHeader}>
-              <Title style={styles.matchTitle}>Match Found!</Title>
-              <Text style={styles.matchSubtitle}>
-                Compatibility: {Math.round((currentMatch.compatibility_score || 0.5) * 100)}%
-              </Text>
-            </View>
-            
-            <View style={styles.matchedUserContainer}>
-              <Avatar.Image 
-                size={100} 
-                source={{ uri: matchedUser.avatar_url || 'https://ui-avatars.com/api/?name=User' }} 
-              />
-              <Title style={styles.matchedUserName}>{matchedUser.username || 'Player'}</Title>
-              <Text style={styles.matchedUserBio}>{matchedUser.bio || 'No bio available'}</Text>
+            <View style={styles.preferencesContainer}>
+              <Text style={styles.preferencesTitle}>Your Preferences</Text>
               
-              <View style={styles.sportsContainer}>
-                {(matchedUser.preferred_sports || []).map((sport: string) => (
-                  <Chip 
-                    key={sport} 
-                    style={styles.sportChip}
-                    icon={() => <MaterialCommunityIcons name={getSportIcon(sport)} size={16} color={COLORS.white} />}
-                  >
-                    {sport}
-                  </Chip>
-                ))}
+              {/* Sports Selection */}
+              <View style={styles.preferenceItem}>
+                <Text style={styles.preferenceLabel}>Sports</Text>
+                <MultiSelect
+                  items={sportOptions}
+                  uniqueKey="id"
+                  displayKey="name"
+                  selectedItems={preferences.sports}
+                  onSelectedItemsChange={(items: string[]) => handlePreferenceChange('sports', items)}
+                  selectText="Select Sports"
+                  searchInputPlaceholderText="Search Sports..."
+                  tagRemoveIconColor={COLORS.error}
+                  tagBorderColor={COLORS.primary}
+                  tagTextColor={COLORS.text}
+                  selectedItemTextColor={COLORS.primary}
+                  selectedItemIconColor={COLORS.primary}
+                  itemTextColor={COLORS.text}
+                  styleMainWrapper={styles.multiSelectWrapper}
+                  styleDropdownMenuSubsection={styles.multiSelectDropdown}
+                  hideSubmitButton
+                />
+              </View>
+              
+              {/* Skill Level Selection */}
+              <View style={styles.preferenceItem}>
+                <Text style={styles.preferenceLabel}>Skill Level</Text>
+                <View style={styles.skillLevelContainer}>
+                  {skillLevelOptions.map(level => (
+                    <Chip
+                      key={level.id}
+                      selected={preferences.skillLevel === level.id}
+                      onPress={() => handlePreferenceChange('skillLevel', level.id)}
+                      style={[
+                        styles.skillChip,
+                        preferences.skillLevel === level.id && styles.selectedSkillChip
+                      ]}
+                    >
+                      {level.name}
+                    </Chip>
+                  ))}
+                </View>
+              </View>
+              
+              {/* Distance Slider */}
+              <View style={styles.preferenceItem}>
+                <Text style={styles.preferenceLabel}>
+                  Maximum Distance: {preferences.maxDistance} km
+                </Text>
+                <Slider
+                  style={styles.slider}
+                  minimumValue={1}
+                  maximumValue={50}
+                  step={1}
+                  value={preferences.maxDistance}
+                  onValueChange={(value) => handlePreferenceChange('maxDistance', value)}
+                  minimumTrackTintColor={COLORS.primary}
+                  maximumTrackTintColor={COLORS.disabled}
+                  thumbTintColor={COLORS.primary}
+                />
               </View>
             </View>
             
-            {currentMatch.message && (
-              <View style={styles.messageContainer}>
-                <Text style={styles.messageLabel}>Message:</Text>
-                <Text style={styles.messageText}>{currentMatch.message}</Text>
+            <Button
+              mode="contained"
+              style={styles.matchmakingButton}
+              loading={isSearching}
+              icon={isSearching ? 'stop' : 'account-search'}
+              onPress={toggleMatchmaking}
+            >
+              {isSearching ? 'Stop Searching' : 'Start Matchmaking'}
+            </Button>
+            
+            {isSearching && (
+              <View style={styles.searchingContainer}>
+                <Text style={styles.searchingText}>
+                  Searching for players... {formatSearchTime(searchTime)}
+                </Text>
+                <ProgressBar
+                  indeterminate
+                  style={styles.searchingProgress}
+                  color={COLORS.primary}
+                />
+                
+                <Animated.View
+                  style={[
+                    styles.radarContainer,
+                    {
+                      transform: [
+                        { scale: pulseAnim }
+                      ]
+                    }
+                  ]}
+                >
+                  <View style={styles.radarCircle} />
+                  <View style={styles.radarCenter} />
+                </Animated.View>
+                
+                {potentialMatches.length > 0 && (
+                  <View style={styles.potentialMatchesContainer}>
+                    <Text style={styles.potentialMatchesTitle}>
+                      Potential Matches ({potentialMatches.length})
+                    </Text>
+                    {potentialMatches.slice(0, 3).map((match, index) => (
+                      <View key={index} style={styles.potentialMatchItem}>
+                        <Avatar.Text
+                          size={40}
+                          label={match.username?.charAt(0) || 'U'}
+                          style={{ backgroundColor: COLORS.secondary }}
+                        />
+                        <View style={styles.potentialMatchInfo}>
+                          <Text style={styles.potentialMatchName}>
+                            {match.username || 'Unknown Player'}
+                          </Text>
+                          <Text style={styles.potentialMatchDetails}>
+                            {match.sport || 'Any sport'} • {match.distance?.toFixed(1) || '?'} km away
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
-            
-            <View style={styles.matchActionButtons}>
-              <Button 
-                mode="contained" 
-                style={[styles.actionButton, styles.rejectButton]} 
-                onPress={() => rejectMatch(currentMatch.id)}
-              >
-                Decline
-              </Button>
-              <Button 
-                mode="contained" 
-                style={[styles.actionButton, styles.acceptButton]} 
-                onPress={() => acceptMatch(currentMatch.id)}
-              >
-                Accept
-              </Button>
-            </View>
           </Card.Content>
         </Card>
-      </View>
-    );
-  }
-
-  // Render matchmaking interface
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <Card style={styles.preferencesCard}>
-        <Card.Content>
-          <Title style={styles.cardTitle}>Matchmaking Preferences</Title>
-          
-          <Text style={styles.sectionLabel}>Sports</Text>
-          <View style={styles.multiSelectContainer}>
-            <MultiSelect
-              items={sportOptions}
-              uniqueKey="id"
-              onSelectedItemsChange={(selectedItems) => 
-                setPreferences(prev => ({ ...prev, sports: selectedItems }))
-              }
-              selectedItems={preferences.sports}
-              selectText="Select Sports"
-              searchInputPlaceholderText="Search Sports..."
-              tagRemoveIconColor={COLORS.error}
-              tagBorderColor={COLORS.primary}
-              tagTextColor={COLORS.primary}
-              selectedItemTextColor={COLORS.primary}
-              selectedItemIconColor={COLORS.primary}
-              itemTextColor="#000"
-              displayKey="name"
-              searchInputStyle={{ color: '#000' }}
-              styleMainWrapper={styles.multiSelectWrapper}
-              styleDropdownMenuSubsection={styles.multiSelectDropdown}
-              hideSubmitButton
-            />
+        
+        {/* Available Games Section */}
+        <View style={styles.gamesSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Available Games</Text>
+            <Button
+              mode="text"
+              onPress={fetchAvailableGames}
+              icon="refresh"
+              compact
+            >
+              Refresh
+            </Button>
           </View>
           
-          <Text style={styles.sectionLabel}>Skill Level</Text>
-          <View style={styles.skillLevelContainer}>
-            {skillLevelOptions.map(option => (
-              <Chip
-                key={option.id}
-                selected={preferences.skillLevel === option.id}
-                onPress={() => setPreferences(prev => ({ ...prev, skillLevel: option.id }))}
-                style={[
-                  styles.skillChip,
-                  preferences.skillLevel === option.id && styles.selectedSkillChip
-                ]}
-                textStyle={preferences.skillLevel === option.id ? styles.selectedChipText : {}}
-              >
-                {option.name}
-              </Chip>
-            ))}
-          </View>
-          
-          <Text style={styles.sectionLabel}>Maximum Distance: {preferences.maxDistance} km</Text>
-          <Slider
-            style={styles.slider}
-            minimumValue={1}
-            maximumValue={50}
-            step={1}
-            value={preferences.maxDistance}
-            onValueChange={(value) => setPreferences(prev => ({ ...prev, maxDistance: value }))}
-            minimumTrackTintColor={COLORS.primary}
-            maximumTrackTintColor="#D0D0D0"
-            thumbTintColor={COLORS.primary}
-          />
-          
-          <View style={styles.lookingForContainer}>
-            <Text style={styles.sectionLabel}>I'm looking for:</Text>
-            <View style={styles.lookingForOptions}>
-              <Chip
-                selected={preferences.lookingForGame}
-                onPress={() => setPreferences(prev => ({ ...prev, lookingForGame: true }))}
-                style={[styles.lookingChip, preferences.lookingForGame && styles.selectedLookingChip]}
-                textStyle={preferences.lookingForGame ? styles.selectedChipText : {}}
-                icon="account-group"
-              >
-                A Game
-              </Chip>
-              <Chip
-                selected={!preferences.lookingForGame}
-                onPress={() => setPreferences(prev => ({ ...prev, lookingForGame: false }))}
-                style={[styles.lookingChip, !preferences.lookingForGame && styles.selectedLookingChip]}
-                textStyle={!preferences.lookingForGame ? styles.selectedChipText : {}}
-                icon="account"
-              >
-                A Partner
-              </Chip>
-            </View>
-          </View>
-        </Card.Content>
-      </Card>
-      
-      {isSearching ? (
-        <View style={styles.searchingContainer}>
-          <Text style={styles.searchingText}>Searching for players...</Text>
-          <Text style={styles.searchTimeText}>Time elapsed: {formatSearchTime(searchTime)}</Text>
-          
-          <Animated.View 
-            style={[
-              styles.pulseCircle,
-              { transform: [{ scale: pulseAnim }] }
-            ]}
-          >
-            <MaterialCommunityIcons name="radar" size={120} color={COLORS.primary} />
-          </Animated.View>
-          
-          {potentialMatches.length > 0 && (
-            <View style={styles.potentialMatchesContainer}>
-              <Text style={styles.potentialMatchesTitle}>
-                {potentialMatches.length} potential {potentialMatches.length === 1 ? 'match' : 'matches'} found
-              </Text>
-              <ProgressBar 
-                progress={Math.min(1, potentialMatches.length / 10)} 
-                color={COLORS.primary} 
-                style={styles.matchProgress} 
-              />
-            </View>
-          )}
-          
-          <Button 
-            mode="contained" 
-            onPress={toggleMatchmaking} 
-            style={styles.cancelButton}
-          >
-            Cancel
-          </Button>
+          {renderAvailableGames()}
         </View>
-      ) : (
-        <Button 
-          mode="contained" 
-          onPress={toggleMatchmaking} 
-          style={styles.startButton}
-          icon="account-search"
-        >
-          Start Matchmaking
-        </Button>
-      )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 };
 
 // Helper function to get sport icon
 const getSportIcon = (sport: string) => {
-  switch (sport) {
+  switch (sport?.toLowerCase()) {
     case 'basketball':
       return 'basketball';
     case 'football':
@@ -463,7 +655,7 @@ const getSportIcon = (sport: string) => {
     case 'running':
       return 'run';
     default:
-      return 'handball';
+      return 'basketball';
   }
 };
 
@@ -472,208 +664,216 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  contentContainer: {
-    padding: SPACING.medium,
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: SPACING.md,
+    paddingBottom: SPACING.xl * 2,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
   },
   loadingText: {
-    marginTop: SPACING.small,
-    fontSize: FONT_SIZES.medium,
+    marginTop: SPACING.md,
+    fontSize: FONT_SIZES.md,
     color: COLORS.text,
   },
-  preferencesCard: {
-    marginBottom: SPACING.medium,
-    borderRadius: BORDER_RADIUS.medium,
-    elevation: 4,
+  connectionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SPACING.xs,
+    backgroundColor: COLORS.card,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
-  cardTitle: {
-    fontSize: FONT_SIZES.large,
+  statusIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: SPACING.xs,
+  },
+  statusText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text,
+  },
+  matchRequestCard: {
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.card,
+  },
+  matchText: {
+    fontSize: FONT_SIZES.md,
+    marginBottom: SPACING.md,
+  },
+  matchActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  matchButton: {
+    flex: 1,
+    marginHorizontal: SPACING.xs,
+  },
+  matchmakingCard: {
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.card,
+  },
+  preferencesContainer: {
+    marginBottom: SPACING.md,
+  },
+  preferencesTitle: {
+    fontSize: FONT_SIZES.md,
     fontWeight: 'bold',
-    marginBottom: SPACING.medium,
-    color: COLORS.primary,
+    marginBottom: SPACING.sm,
   },
-  sectionLabel: {
-    fontSize: FONT_SIZES.medium,
-    fontWeight: '600',
-    marginTop: SPACING.medium,
-    marginBottom: SPACING.small,
+  preferenceItem: {
+    marginBottom: SPACING.md,
+  },
+  preferenceLabel: {
+    fontSize: FONT_SIZES.sm,
     color: COLORS.text,
-  },
-  multiSelectContainer: {
-    marginBottom: SPACING.small,
+    marginBottom: SPACING.xs,
   },
   multiSelectWrapper: {
-    backgroundColor: COLORS.white,
-    borderRadius: BORDER_RADIUS.small,
-    borderColor: '#E0E0E0',
-    borderWidth: 1,
+    backgroundColor: COLORS.background,
   },
   multiSelectDropdown: {
-    borderColor: '#E0E0E0',
+    backgroundColor: COLORS.background,
+    borderColor: COLORS.border,
     borderWidth: 1,
-    paddingHorizontal: SPACING.small,
-    paddingVertical: SPACING.xsmall,
+    borderRadius: BORDER_RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
   },
   skillLevelContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: SPACING.small,
   },
   skillChip: {
-    margin: SPACING.xsmall,
-    backgroundColor: COLORS.white,
+    margin: SPACING.xs,
+    backgroundColor: COLORS.background,
   },
   selectedSkillChip: {
     backgroundColor: COLORS.primary,
-  },
-  selectedChipText: {
-    color: COLORS.white,
   },
   slider: {
     width: '100%',
     height: 40,
   },
-  lookingForContainer: {
-    marginVertical: SPACING.small,
-  },
-  lookingForOptions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: SPACING.small,
-  },
-  lookingChip: {
-    paddingHorizontal: SPACING.medium,
-    backgroundColor: COLORS.white,
-  },
-  selectedLookingChip: {
-    backgroundColor: COLORS.primary,
-  },
-  startButton: {
-    marginTop: SPACING.medium,
-    paddingVertical: SPACING.small,
-    borderRadius: BORDER_RADIUS.medium,
+  matchmakingButton: {
     backgroundColor: COLORS.primary,
   },
   searchingContainer: {
+    marginTop: SPACING.md,
     alignItems: 'center',
-    marginTop: SPACING.large,
-    paddingVertical: SPACING.large,
   },
   searchingText: {
-    fontSize: FONT_SIZES.large,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-    marginBottom: SPACING.small,
-  },
-  searchTimeText: {
-    fontSize: FONT_SIZES.medium,
+    fontSize: FONT_SIZES.md,
     color: COLORS.text,
-    marginBottom: SPACING.large,
+    marginBottom: SPACING.sm,
   },
-  pulseCircle: {
+  searchingProgress: {
+    width: '100%',
+    height: 4,
+    marginBottom: SPACING.md,
+  },
+  radarContainer: {
     width: 200,
     height: 200,
-    borderRadius: 100,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: SPACING.large,
+    marginVertical: SPACING.md,
+  },
+  radarCircle: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 100,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    opacity: 0.5,
+  },
+  radarCenter: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
   },
   potentialMatchesContainer: {
     width: '100%',
-    alignItems: 'center',
-    marginBottom: SPACING.large,
+    marginTop: SPACING.md,
   },
   potentialMatchesTitle: {
-    fontSize: FONT_SIZES.medium,
-    color: COLORS.text,
-    marginBottom: SPACING.small,
-  },
-  matchProgress: {
-    width: '80%',
-    height: 8,
-    borderRadius: 4,
-  },
-  cancelButton: {
-    backgroundColor: COLORS.error,
-  },
-  matchCard: {
-    margin: SPACING.medium,
-    borderRadius: BORDER_RADIUS.medium,
-    elevation: 4,
-  },
-  matchHeader: {
-    alignItems: 'center',
-    marginBottom: SPACING.medium,
-  },
-  matchTitle: {
-    fontSize: FONT_SIZES.xlarge,
+    fontSize: FONT_SIZES.md,
     fontWeight: 'bold',
-    color: COLORS.primary,
+    marginBottom: SPACING.sm,
   },
-  matchSubtitle: {
-    fontSize: FONT_SIZES.medium,
-    color: COLORS.text,
-  },
-  matchedUserContainer: {
-    alignItems: 'center',
-    marginVertical: SPACING.medium,
-  },
-  matchedUserName: {
-    fontSize: FONT_SIZES.large,
-    fontWeight: 'bold',
-    marginTop: SPACING.small,
-  },
-  matchedUserBio: {
-    fontSize: FONT_SIZES.medium,
-    textAlign: 'center',
-    marginVertical: SPACING.small,
-    color: COLORS.text,
-  },
-  sportsContainer: {
+  potentialMatchItem: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    marginTop: SPACING.small,
+    alignItems: 'center',
+    padding: SPACING.sm,
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.sm,
+    marginBottom: SPACING.sm,
   },
-  sportChip: {
-    margin: SPACING.xsmall,
-    backgroundColor: COLORS.primary,
+  potentialMatchInfo: {
+    marginLeft: SPACING.md,
+    flex: 1,
   },
-  messageContainer: {
-    marginVertical: SPACING.medium,
-    padding: SPACING.small,
-    backgroundColor: COLORS.lightBackground,
-    borderRadius: BORDER_RADIUS.small,
-  },
-  messageLabel: {
-    fontSize: FONT_SIZES.small,
+  potentialMatchName: {
+    fontSize: FONT_SIZES.md,
     fontWeight: 'bold',
-    color: COLORS.text,
   },
-  messageText: {
-    fontSize: FONT_SIZES.medium,
-    color: COLORS.text,
-    marginTop: SPACING.xsmall,
+  potentialMatchDetails: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.disabled,
   },
-  matchActionButtons: {
+  gamesSection: {
+    marginTop: SPACING.md,
+  },
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: SPACING.medium,
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
   },
-  actionButton: {
-    flex: 1,
-    marginHorizontal: SPACING.xsmall,
+  sectionTitle: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: 'bold',
   },
-  acceptButton: {
-    backgroundColor: COLORS.success,
+  gameCard: {
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.card,
   },
-  rejectButton: {
-    backgroundColor: COLORS.error,
+  gameDetails: {
+    flexDirection: 'row',
+    marginTop: SPACING.sm,
+  },
+  gameDetail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: SPACING.md,
+  },
+  gameDetailText: {
+    marginLeft: SPACING.xs,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text,
+  },
+  noGamesCard: {
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.card,
+    padding: SPACING.sm,
+  },
+  noGamesText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: SPACING.xs,
+  },
+  noGamesSubtext: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.disabled,
+    textAlign: 'center',
   },
 });
 
