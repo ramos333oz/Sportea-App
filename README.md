@@ -2,6 +2,7 @@
 
 Sportea is a mobile application designed to connect sports enthusiasts, facilitate team organization, and enhance the overall sports community experience.
 
+<<<<<<< profile-section-clean
 
 ## 📱 Features
 
@@ -339,7 +340,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## 🙏 Acknowledgments
 
 - Hat tip to the React Native and Expo communities
-- Supabase for providing an excellent backend solution 
+- Supabase for providing an excellent backend solution
 
 ## Testing with Expo Go
 
@@ -370,7 +371,7 @@ For authentication to work properly in Expo Go:
 3. Troubleshooting authentication issues:
    - Check network errors in the Expo developer tools
    - Ensure your device can reach the Supabase server
-   - The app forces login screen display for testing (modify App.js to change this behavior) 
+   - The app forces login screen display for testing (modify App.js to change this behavior)
 
 ## Testing with Emulators
 
@@ -385,9 +386,9 @@ For testing the app in emulators (recommended for development):
 2. Configure Supabase:
    - Go to Authentication → URL Configuration
    - Set Site URL to:
-   
+
    - Add ALL of these to Redirect URLs:
-   
+
 
 3. Run the app in your emulator:
    ```
@@ -402,17 +403,45 @@ For testing the app in emulators (recommended for development):
 
 - **Android Emulator Network Issues**: If the Android emulator cannot connect, make sure it has internet access
 - **iOS Simulator Authentication Problems**: Check that you're using `exp://localhost:8083` in Supabase configuration
-- **Login Screen Not Showing**: The app is configured to always show the login screen for testing (see App.js) 
+- **Login Screen Not Showing**: The app is configured to always show the login screen for testing (see App.js)
 =======
 ## 🔄 Recent Development Updates (Latest)
 
-### Supabase Integration & Authentication
+### Profile Section Enhancements
+- ✅ Fixed Username Display: Username now appears properly above user ID
+- ✅ Improved Profile Picture: Removed duplicate profile picture and added proper image upload
+- ✅ Added New Components:
+  - ProfilePictureUpload: For uploading profile images
+  - ProfileBioEdit: For editing user bio
+  - SportPreferences: For selecting favorite sports
+  - UsernameEdit: For changing username
+  - Achievements: For displaying user accomplishments
+
+### Realtime Functionality
+- ✅ Enabled Realtime for Key Tables:
+  - Games
+  - Profiles
+  - Matches
+  - Chat Messages
+- ✅ Added RealtimeService for managing subscriptions
+- ✅ Added TestRealtimeScreen for testing realtime features
+- ✅ Enhanced RealtimeGamesList with live updates
+
+### Technical Improvements
+- ✅ Fixed TypeScript Errors and type issues
+- ✅ Improved Error Handling with better messages and fallbacks
+- ✅ Added Cross-Platform Support for web and mobile
+- ✅ Enhanced UI with better spacing and organization
+
+### Previous Updates
+
+#### Supabase Integration & Authentication
 - ✅ Successfully integrated Supabase backend (Region: ap-southeast-1)
 - ✅ Implemented secure authentication system with auto-login
 - ✅ Added logout functionality with confirmation dialog
 - ✅ Set up proper error handling and user feedback
 
-### Database Structure
+#### Database Structure
 - ✅ Created and configured essential tables:
   - profiles (with RLS policies)
   - games (with location tracking)
@@ -422,17 +451,4 @@ For testing the app in emulators (recommended for development):
 - ✅ Implemented Row Level Security (RLS)
 - ✅ Added automatic profile creation triggers
 
-### UI/UX Improvements
-- ✅ Enhanced ProfileScreen with user management
-- ✅ Improved FindGamesScreen functionality
-- ✅ Added Settings modal with logout
-- ✅ Implemented loading states and error feedback
-
-### Technical Enhancements
-- ✅ Fixed TypeScript type definitions
-- ✅ Implemented proper database constants
-- ✅ Added error handling with mock data fallback
-- ✅ Resolved table reference issues
-
-[Previous content remains unchanged...]
-
+>>>>>>> master
