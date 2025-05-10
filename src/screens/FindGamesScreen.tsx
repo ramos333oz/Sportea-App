@@ -122,31 +122,34 @@ const FindGamesScreen = () => {
   const [showMap, setShowMap] = useState(false);
   const [games, setGames] = useState<DisplayGame[]>([]);
   const [filteredGames, setFilteredGames] = useState<DisplayGame[]>(mockGames);
+  
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, FlatList } from 'react-native';
+import { Text, Card, Button } from 'react-native-paper';
+import { supabase } from '../lib/supabase';
+import { TABLES } from '../constants/database';
+
+type Game = {
+  id: string;
+  title: string;
+  description: string;
+  sport_type: string;
+  location: string;
+  start_time: string;
+};
+
+export default function FindGamesScreen() {
+  const [games, setGames] = useState<Game[]>([]);
+
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [userLocation, setUserLocation] = useState({ latitude: 37.7749, longitude: -122.4194 });
 
-  // Get sport icon based on sport type
-  const getSportIcon = (sportType: string) => {
-    switch (sportType) {
-      case 'basketball':
-        return 'basketball';
-      case 'football':
-        return 'soccer';
-      case 'badminton':
-        return 'badminton';
-      case 'table-tennis':
-        return 'table-tennis';
-      case 'volleyball':
-        return 'volleyball';
-      default:
-        return 'sport';
-    }
-  };
+  useEffect(() => {
+    fetchGames();
+  }, []);
 
-  // Function to fetch games from the backend
   const fetchGames = async () => {
     try {
+
       setLoading(true);
       
       const filters = {
@@ -198,11 +201,33 @@ const FindGamesScreen = () => {
       console.error('Error in fetchGames:', error);
       setGames(mockGames);
       setFilteredGames(mockGames);
+
+      const { data, error } = await supabase
+        .from(TABLES.GAMES)
+        .select('*')
+        .eq('status', 'active');
+
+      if (error) throw error;
+      setGames(data || []);
+    } catch (error) {
+      console.error('Error fetching games:', error.message);
+      // Fallback to mock data if there's an error
+      setGames([
+        {
+          id: '1',
+          title: 'Sample Game',
+          description: 'This is a sample game',
+          sport_type: 'Basketball',
+          location: 'Local Court',
+          start_time: new Date().toISOString(),
+        },
+      ]);
+
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
+
 
   // Initial fetch
   useEffect(() => {
@@ -332,286 +357,56 @@ const FindGamesScreen = () => {
         </Card.Actions>
       </Card>
     </TouchableOpacity>
+
+  const renderGame = ({ item }: { item: Game }) => (
+    <Card style={styles.card}>
+      <Card.Content>
+        <Text variant="titleLarge">{item.title}</Text>
+        <Text variant="bodyMedium">{item.description}</Text>
+        <Text variant="bodyMedium">Sport: {item.sport_type}</Text>
+        <Text variant="bodyMedium">Location: {item.location}</Text>
+        <Text variant="bodyMedium">
+          Time: {new Date(item.start_time).toLocaleString()}
+        </Text>
+      </Card.Content>
+      <Card.Actions>
+        <Button onPress={() => console.log('Join game:', item.id)}>
+          Join Game
+        </Button>
+      </Card.Actions>
+    </Card>
+
   );
 
-  const renderGameMarkers = () => {
-    if (!filteredGames) return [];
-    
-    return filteredGames.map(game => {
-      if (game.location && game.location.latitude && game.location.longitude) {
-        return {
-          id: game.id,
-          latitude: game.location.latitude,
-          longitude: game.location.longitude,
-          title: game.title,
-          description: `${game.sport} - ${game.skillLevel || 'All levels'}`
-        };
-      }
-      return null;
-    }).filter(marker => marker !== null);
-  };
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Text>Loading games...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Searchbar
-          placeholder="Search games, locations..."
-          onChangeText={onChangeSearch}
-          value={searchQuery}
-          style={styles.searchBar}
-          iconColor={COLORS.primary}
-        />
-      </View>
-
-      <View style={styles.filterContainer}>
-        <Text style={styles.filterTitle}>Sport</Text>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterScroll}
-        >
-          {sportOptions.map(sport => (
-            <Chip
-              key={sport.id}
-              selected={selectedSport === sport.id}
-              onPress={() => toggleSportFilter(sport.id)}
-              style={[
-                styles.filterChip,
-                selectedSport === sport.id && styles.selectedFilterChip
-              ]}
-              textStyle={[
-                styles.filterChipText,
-                selectedSport === sport.id && styles.selectedFilterChipText
-              ]}
-              icon={sport.icon}
-            >
-              {sport.name}
-            </Chip>
-          ))}
-        </ScrollView>
-
-        <Text style={styles.filterTitle}>Skill Level</Text>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterScroll}
-        >
-          {skillLevelOptions.map(level => (
-            <Chip
-              key={level.id}
-              selected={selectedSkillLevel === level.id}
-              onPress={() => toggleSkillFilter(level.id)}
-              style={[
-                styles.filterChip,
-                selectedSkillLevel === level.id && styles.selectedFilterChip
-              ]}
-              textStyle={[
-                styles.filterChipText,
-                selectedSkillLevel === level.id && styles.selectedFilterChipText
-              ]}
-            >
-              {level.name}
-            </Chip>
-          ))}
-        </ScrollView>
-      </View>
-
-      <View style={styles.viewToggleContainer}>
-        <Button 
-          mode={showMap ? "outlined" : "contained"} 
-          onPress={toggleMapView}
-          style={styles.viewToggleButton}
-        >
-          List View
-        </Button>
-        <Button 
-          mode={showMap ? "contained" : "outlined"} 
-          onPress={toggleMapView}
-          style={styles.viewToggleButton}
-        >
-          Map View
-        </Button>
-      </View>
-
-      <Divider style={styles.divider} />
-
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading games...</Text>
-        </View>
-      ) : showMap ? (
-        <View style={styles.mapContainer}>
-          <SporteaMap
-            style={styles.map}
-            markers={renderGameMarkers()}
-            onMarkerPress={(marker) => navigateToGameDetails(marker.id)}
-          />
-        </View>
-      ) : (
-        <FlatList
-          data={filteredGames}
-          renderItem={renderGameItem}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.gamesList}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[COLORS.primary]}
-            />
-          }
-          ListEmptyComponent={() => (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No games found matching your criteria</Text>
-              <Button mode="contained" onPress={onRefresh}>
-                Refresh
-              </Button>
-            </View>
-          )}
-        />
-      )}
+      <FlatList
+        data={games}
+        renderItem={renderGame}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.list}
+      />
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    padding: 10,
   },
-  header: {
-    padding: SPACING.md,
-    backgroundColor: COLORS.primary,
-  },
-  searchBar: {
-    elevation: 0,
-    backgroundColor: COLORS.background,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  filterContainer: {
-    padding: SPACING.md,
-    backgroundColor: COLORS.card,
-  },
-  filterTitle: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: 'bold',
-    marginBottom: SPACING.xs,
-    color: COLORS.text,
-  },
-  filterScroll: {
-    paddingBottom: SPACING.sm,
-  },
-  filterChip: {
-    marginRight: SPACING.xs,
-    marginBottom: SPACING.xs,
-    backgroundColor: COLORS.background,
-  },
-  selectedFilterChip: {
-    backgroundColor: COLORS.primary,
-  },
-  filterChipText: {
-    color: COLORS.text,
-  },
-  selectedFilterChipText: {
-    color: COLORS.background,
-  },
-  viewToggleContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: SPACING.md,
-  },
-  viewToggleButton: {
-    flex: 1,
-    marginHorizontal: SPACING.sm,
-  },
-  divider: {
-    marginBottom: SPACING.md,
-  },
-  gamesList: {
-    paddingBottom: SPACING.xl,
+  list: {
+    gap: 10,
   },
   card: {
-    marginBottom: SPACING.md,
-    borderRadius: BORDER_RADIUS.md,
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  titleContainer: {
-    flex: 1,
-    marginLeft: SPACING.sm,
-  },
-  cardTitle: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
-    color: COLORS.text,
-  },
-  cardSubtitle: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.disabled,
-  },
-  distanceChip: {
-    backgroundColor: COLORS.card,
-    height: 24,
-  },
-  cardDetails: {
-    marginTop: SPACING.sm,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    marginBottom: SPACING.xs,
-  },
-  detailLabel: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: 'bold',
-    width: '35%',
-    color: COLORS.text,
-  },
-  detailValue: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text,
-  },
-  cardActions: {
-    justifyContent: 'flex-end',
-    paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.sm,
-  },
-  joinButton: {
-    backgroundColor: COLORS.primary,
-  },
-  mapContainer: {
-    flex: 1,
-    borderRadius: BORDER_RADIUS.md,
-    overflow: 'hidden',
-  },
-  map: {
-    height: '100%',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: SPACING.md,
-    color: COLORS.primary,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: SPACING.xl,
-  },
-  emptyText: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
-    color: COLORS.disabled,
+    marginBottom: 10,
   },
 });
-
-export default FindGamesScreen; 

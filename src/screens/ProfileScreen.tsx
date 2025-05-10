@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
+
 import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Platform } from 'react-native';
 import { Text, Avatar, Button, Card, FAB, Snackbar, Modal, Portal, Surface } from 'react-native-paper';
+=======
+import { View, StyleSheet, ScrollView, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { Text, Avatar, Button, Card, List, Divider, FAB, Snackbar, Modal, Portal } from 'react-native-paper';
+
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants/theme';
+
 import { getUserProfile, getUserStats, getUserGames, updateUserProfile } from '../utils/profileUtils';
 
 // Import our new components
@@ -13,6 +19,11 @@ import ProfileBioEdit from '../components/ProfileBioEdit';
 import SportPreferences from '../components/SportPreferences';
 import Achievements from '../components/Achievements';
 import UsernameEdit from '../components/UsernameEdit';
+=======
+import { getUserProfile, getUserStats, getUserGames } from '../utils/profileUtils';
+import { supabase } from '../services/supabase';
+import { TABLES } from '../constants/database';
+
 
 interface Sport {
   id: string;
@@ -116,7 +127,11 @@ const mockRecentActivity = [
 const ProfileScreen = () => {
   const navigation = useNavigation();
   const { user, signOut } = useAuth();
+
   const [activeTab, setActiveTab] = useState('profile');
+=======
+  const [activeTab, setActiveTab] = useState('games');
+
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -125,6 +140,12 @@ const ProfileScreen = () => {
   const [upcomingGames, setUpcomingGames] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+
+
+=======
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  
 
   useEffect(() => {
     if (user) {
@@ -206,15 +227,21 @@ const ProfileScreen = () => {
         // Don't throw here, continue processing
       }
 
+
       if (gamesData && gamesData.all && Array.isArray(gamesData.all)) {
         console.log('Games loaded successfully');
         // Filter for upcoming games
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
+=======
+      
+      if (gamesData) {
+
         const upcoming = gamesData.all
-          .filter((game: any) => new Date(game.date) >= today)
+          .filter((game: any) => new Date(game.date) >= new Date())
           .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
           .slice(0, 5); // Get only the nearest 5 games
 
         setUpcomingGames(upcoming);
@@ -223,6 +250,14 @@ const ProfileScreen = () => {
         const activity = [
           // Games hosted by user
           ...(gamesData.hosted || []).map((game: any) => ({
+=======
+          .slice(0, 5);
+        
+        setUpcomingGames(upcoming);
+        
+        const activity = [
+          ...gamesData.hosted.map((game: any) => ({
+
             id: `hosted-${game.id}`,
             type: 'hosted',
             gameTitle: game.title,
@@ -230,17 +265,26 @@ const ProfileScreen = () => {
             gameId: game.id
           })),
 
+
           // Games joined by user
           ...(gamesData.joined || []).map((game: any) => ({
+=======
+          ...gamesData.joined.map((game: any) => ({
+
             id: `joined-${game.id}`,
             type: 'joined',
             gameTitle: game.title,
             timestamp: game.created_at,
             gameId: game.id
           }))
+
         ]
         .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
         .slice(0, 10); // Get most recent 10 activities
+
+=======
+        ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        
 
         setRecentActivity(activity);
       } else {
@@ -248,14 +292,16 @@ const ProfileScreen = () => {
         setUpcomingGames([]);
         setRecentActivity([]);
       }
-    } catch (err: any) {
-      console.error('Error loading user data:', err);
-      setError(err.message || 'Failed to load user data');
+    } catch (error) {
+      setError(error.message);
+      setSnackbarMessage('Error loading profile data');
+      setSnackbarVisible(true);
     } finally {
       setIsLoading(false);
       setRefreshing(false);
     }
   };
+
 
   // Handle refresh
   const onRefresh = () => {
@@ -363,13 +409,59 @@ const ProfileScreen = () => {
             <View style={styles.followItem}>
               <Text style={styles.followCount}>{profile.followers_count || 0}</Text>
               <Text style={styles.followLabel}>Followers</Text>
+=======
+  const handleLogout = async () => {
+    try {
+      setIsLoading(true);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      navigation.navigate('Login');
+    } catch (error) {
+      setSnackbarMessage('Error logging out: ' + error.message);
+      setSnackbarVisible(true);
+    } finally {
+      setIsLoading(false);
+      setShowSettings(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <ScrollView>
+        <View style={styles.header}>
+          <Avatar.Image
+            size={80}
+            source={{ uri: profile?.avatar_url || mockUser.profileImage }}
+          />
+          <Text style={styles.name}>{profile?.full_name || mockUser.name}</Text>
+          <Text style={styles.username}>{profile?.username || mockUser.username}</Text>
+          <Text style={styles.location}>{profile?.location || mockUser.location}</Text>
+          
+          <View style={styles.statsContainer}>
+            <View style={styles.stat}>
+              <Text style={styles.statNumber}>{stats?.gamesPlayed || mockUser.stats.gamesPlayed}</Text>
+              <Text style={styles.statLabel}>Games</Text>
             </View>
-            <View style={styles.followItem}>
-              <Text style={styles.followCount}>{profile.following_count || 0}</Text>
-              <Text style={styles.followLabel}>Following</Text>
+            <View style={styles.stat}>
+              <Text style={styles.statNumber}>{profile?.followers_count || mockUser.followers}</Text>
+              <Text style={styles.statLabel}>Followers</Text>
+
+            </View>
+            <View style={styles.stat}>
+              <Text style={styles.statNumber}>{profile?.following_count || mockUser.following}</Text>
+              <Text style={styles.statLabel}>Following</Text>
             </View>
           </View>
         </View>
+
       </View>
     );
   };
@@ -499,16 +591,74 @@ const ProfileScreen = () => {
                 {activity.type === 'hosted' && 'You hosted '}
                 {activity.type === 'completed' && 'You completed '}
                 <Text style={styles.activityGameTitle}>{activity.gameTitle}</Text>
+=======
+
+        <View style={styles.content}>
+          <View style={styles.tabSelector}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'games' && styles.activeTab]}
+              onPress={() => setActiveTab('games')}
+            >
+              <Text style={[styles.tabText, activeTab === 'games' && styles.activeTabText]}>
+                Games
+
               </Text>
-              <Text style={styles.activityTime}>{getRelativeTime(activity.timestamp)}</Text>
-            </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'activity' && styles.activeTab]}
+              onPress={() => setActiveTab('activity')}
+            >
+              <Text style={[styles.tabText, activeTab === 'activity' && styles.activeTabText]}>
+                Activity
+              </Text>
+            </TouchableOpacity>
           </View>
-        ))
-      ) : (
-        <View style={styles.emptyState}>
-          <MaterialCommunityIcons name="history" size={40} color={COLORS.disabled} />
-          <Text style={styles.emptyStateText}>No recent activity</Text>
+
+          {activeTab === 'games' ? (
+            <View style={styles.gamesContainer}>
+              {upcomingGames.map((game) => (
+                <Card key={game.id} style={styles.gameCard}>
+                  <Card.Content>
+                    <Text style={styles.gameTitle}>{game.title}</Text>
+                    <Text style={styles.gameInfo}>{game.location}</Text>
+                    <Text style={styles.gameInfo}>
+                      {new Date(game.date).toLocaleDateString()} at{' '}
+                      {new Date(game.date).toLocaleTimeString()}
+                    </Text>
+                    <Text style={styles.gameParticipants}>
+                      {game.participants}/{game.totalSpots} participants
+                    </Text>
+                  </Card.Content>
+                </Card>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.activityContainer}>
+              {recentActivity.map((activity) => (
+                <List.Item
+                  key={activity.id}
+                  title={activity.gameTitle}
+                  description={`${activity.type} • ${new Date(
+                    activity.timestamp
+                  ).toLocaleDateString()}`}
+                  left={(props) => (
+                    <List.Icon
+                      {...props}
+                      icon={
+                        activity.type === 'hosted'
+                          ? 'star'
+                          : activity.type === 'joined'
+                          ? 'account-plus'
+                          : 'check-circle'
+                      }
+                    />
+                  )}
+                />
+              ))}
+            </View>
+          )}
         </View>
+
       )}
     </View>
   );
@@ -638,11 +788,14 @@ const ProfileScreen = () => {
         {activeTab === 'games' && renderUpcomingGames()}
         {activeTab === 'activity' && renderActivity()}
         {activeTab === 'achievements' && renderAchievements()}
+=======
+
       </ScrollView>
 
       <FAB
         style={styles.fab}
         icon="cog"
+
         color={COLORS.background}
         onPress={() => setShowSettings(true)}
       />
@@ -656,8 +809,42 @@ const ProfileScreen = () => {
           label: 'Dismiss',
           onPress: () => setError(''),
         }}
+=======
+        onPress={() => setShowSettings(true)}
+      />
+
+      <Portal>
+        <Modal
+          visible={showSettings}
+          onDismiss={() => setShowSettings(false)}
+          contentContainerStyle={styles.modal}
+        >
+          <Text style={styles.modalTitle}>Settings</Text>
+          <Button
+            mode="contained"
+            onPress={handleLogout}
+            style={styles.logoutButton}
+            loading={isLoading}
+          >
+            Logout
+          </Button>
+          <Button
+            mode="outlined"
+            onPress={() => setShowSettings(false)}
+            style={styles.cancelButton}
+          >
+            Cancel
+          </Button>
+        </Modal>
+      </Portal>
+
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
+
       >
-        {error}
+        {snackbarMessage}
       </Snackbar>
     </View>
   );
@@ -668,278 +855,119 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  scrollContent: {
-    paddingBottom: SPACING.xl,
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    padding: SPACING.lg,
-    backgroundColor: COLORS.primary,
-    borderBottomLeftRadius: BORDER_RADIUS.lg,
-    borderBottomRightRadius: BORDER_RADIUS.lg,
-  },
-  profileImageContainer: {
-    position: 'relative',
-  },
-  profileImage: {
-    backgroundColor: COLORS.background,
-  },
-  editProfileImageButton: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: COLORS.primary,
-    borderRadius: 15,
-    width: 30,
-    height: 30,
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.background,
   },
-  profileInfo: {
-    marginLeft: SPACING.lg,
-    flex: 1,
+  header: {
+    alignItems: 'center',
+    padding: SPACING.large,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   name: {
-    fontSize: FONT_SIZES.xl,
+    fontSize: FONT_SIZES.large,
     fontWeight: 'bold',
-    color: COLORS.background,
+    marginTop: SPACING.small,
   },
   username: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.background,
-    opacity: 0.8,
-  },
-  locationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: SPACING.xs,
+    fontSize: FONT_SIZES.medium,
+    color: COLORS.textSecondary,
   },
   location: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.background,
-    opacity: 0.8,
-    marginLeft: 2,
-  },
-  followContainer: {
-    flexDirection: 'row',
-    marginTop: SPACING.sm,
-  },
-  followItem: {
-    marginRight: SPACING.lg,
-  },
-  followCount: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
-    color: COLORS.background,
-  },
-  followLabel: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.background,
-    opacity: 0.8,
-  },
-  bioContainer: {
-    padding: SPACING.lg,
-  },
-  bioText: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text,
+    fontSize: FONT_SIZES.small,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.tiny,
   },
   statsContainer: {
     flexDirection: 'row',
-    backgroundColor: COLORS.card,
-    margin: SPACING.lg,
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.md,
     justifyContent: 'space-around',
+    width: '100%',
+    marginTop: SPACING.medium,
   },
-  statItem: {
+  stat: {
     alignItems: 'center',
   },
-  statValue: {
-    fontSize: FONT_SIZES.xl,
+  statNumber: {
+    fontSize: FONT_SIZES.large,
     fontWeight: 'bold',
-    color: COLORS.primary,
   },
   statLabel: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.disabled,
+    fontSize: FONT_SIZES.small,
+    color: COLORS.textSecondary,
   },
-  statDivider: {
-    width: 1,
-    backgroundColor: COLORS.border,
+  content: {
+    flex: 1,
+    padding: SPACING.medium,
   },
-  tabContainer: {
+  tabSelector: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.medium,
   },
   tab: {
     flex: 1,
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.small,
     alignItems: 'center',
-  },
-  tabText: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.disabled,
   },
   activeTab: {
     borderBottomWidth: 2,
     borderBottomColor: COLORS.primary,
   },
+  tabText: {
+    fontSize: FONT_SIZES.medium,
+    color: COLORS.textSecondary,
+  },
   activeTabText: {
     color: COLORS.primary,
     fontWeight: 'bold',
   },
-  contentContainer: {
-    padding: SPACING.lg,
+  gamesContainer: {
+    gap: SPACING.small,
   },
   gameCard: {
-    marginBottom: SPACING.md,
-    backgroundColor: COLORS.card,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  gameCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    marginBottom: SPACING.small,
+    borderRadius: BORDER_RADIUS.medium,
   },
   gameTitle: {
-    fontSize: FONT_SIZES.lg,
+    fontSize: FONT_SIZES.medium,
     fontWeight: 'bold',
-    color: COLORS.text,
   },
   gameInfo: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.disabled,
-    marginTop: 2,
+    fontSize: FONT_SIZES.small,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.tiny,
   },
-  hostBadge: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: BORDER_RADIUS.sm,
-  },
-  hostBadgeText: {
-    color: COLORS.background,
-    fontSize: FONT_SIZES.xs,
-    fontWeight: 'bold',
-  },
-  gameFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: SPACING.md,
-  },
-  playersText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: SPACING.xl,
-  },
-  emptyStateText: {
-    fontSize: FONT_SIZES.lg,
-    color: COLORS.disabled,
-    marginTop: SPACING.md,
-    marginBottom: SPACING.lg,
-  },
-  emptyStateButton: {
-    backgroundColor: COLORS.primary,
-  },
-  activityItem: {
-    flexDirection: 'row',
-    marginBottom: SPACING.md,
-    padding: SPACING.sm,
-    backgroundColor: COLORS.card,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  activityIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: SPACING.md,
-  },
-  activityContent: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  activityText: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text,
-  },
-  activityGameTitle: {
-    fontWeight: 'bold',
-  },
-  activityTime: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.disabled,
-    marginTop: 2,
-  },
-  preferencesCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: BORDER_RADIUS.md,
-    marginBottom: SPACING.md,
-  },
-  preferencesTitle: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: SPACING.sm,
-  },
-  preferencesChipsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  preferencesChip: {
-    backgroundColor: COLORS.background,
-    paddingVertical: SPACING.xs,
-    paddingHorizontal: SPACING.sm,
-    borderRadius: BORDER_RADIUS.sm,
-    marginRight: SPACING.sm,
-    marginBottom: SPACING.sm,
-  },
-  preferencesChipText: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: 'bold',
-    color: COLORS.text,
-  },
-  skillLevelText: {
-    fontSize: FONT_SIZES.xs,
+  gameParticipants: {
+    fontSize: FONT_SIZES.small,
     color: COLORS.primary,
+    marginTop: SPACING.tiny,
   },
-  preferenceDivider: {
-    marginVertical: SPACING.md,
-  },
-  preferencesText: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text,
-  },
-  editPreferencesButton: {
-    marginTop: SPACING.md,
-    borderColor: COLORS.primary,
+  activityContainer: {
+    gap: SPACING.tiny,
   },
   fab: {
     position: 'absolute',
-    right: 16,
-    bottom: 16,
+    right: SPACING.medium,
+    bottom: SPACING.medium,
     backgroundColor: COLORS.primary,
   },
-  loadingContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
+  modal: {
+    backgroundColor: COLORS.background,
+    padding: SPACING.large,
+    margin: SPACING.large,
+    borderRadius: BORDER_RADIUS.large,
   },
-  loadingText: {
-    marginTop: SPACING.md,
-    fontSize: FONT_SIZES.lg,
-    color: COLORS.disabled,
+  modalTitle: {
+    fontSize: FONT_SIZES.large,
+    fontWeight: 'bold',
+    marginBottom: SPACING.medium,
+  },
+  logoutButton: {
+    marginBottom: SPACING.small,
+  },
+  cancelButton: {
+    borderColor: COLORS.border,
   },
   modalContainer: {
     backgroundColor: 'transparent',
