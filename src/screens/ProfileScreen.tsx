@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Image, TouchableOpacity, ActivityIndicator, RefreshControl, Platform } from 'react-native';
-import { Text, Avatar, Button, Card, List, Divider, FAB, Snackbar, Modal, Portal, Surface } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Platform } from 'react-native';
+import { Text, Avatar, Button, Card, FAB, Snackbar, Modal, Portal, Surface } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants/theme';
 import { getUserProfile, getUserStats, getUserGames, updateUserProfile } from '../utils/profileUtils';
-import { supabase } from '../services/supabase';
-import { TABLES } from '../constants/database';
 
 // Import our new components
 import ProfilePictureUpload from '../components/ProfilePictureUpload';
@@ -133,7 +131,7 @@ const ProfileScreen = () => {
       loadUserData();
     } else {
       // Fallback to mock data if no user
-      setProfile(mockUser);
+      setProfile(mockUser as any);
       setUpcomingGames(mockUpcomingGames);
       setRecentActivity(mockRecentActivity);
       setIsLoading(false);
@@ -168,10 +166,14 @@ const ProfileScreen = () => {
         setProfile({
           id: user.id,
           username: user.email ? user.email.split('@')[0] : 'user',
-          avatar_url: null,
+          avatar_url: undefined,
           bio: '',
-          sports_preferences: []
-        });
+          sports_preferences: [],
+          full_name: '',
+          // Add any other required fields from UserProfile type
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        } as any);
       }
 
       // Get user stats
@@ -262,7 +264,7 @@ const ProfileScreen = () => {
   };
 
   // Handle profile updates
-  const handleProfileUpdate = (field, value) => {
+  const handleProfileUpdate = (field: string, value: any) => {
     if (!profile || !user) return;
 
     // Update local state immediately for better UX
@@ -339,8 +341,8 @@ const ProfileScreen = () => {
                     document.dispatchEvent(event);
                   }
                   // For non-web platforms
-                  else if (global.pickProfileImage) {
-                    global.pickProfileImage();
+                  else if (typeof global !== 'undefined' && (global as any).pickProfileImage) {
+                    (global as any).pickProfileImage();
                   }
                 }
               }, 100);
@@ -375,15 +377,7 @@ const ProfileScreen = () => {
     );
   };
 
-  const renderBio = () => {
-    if (!profile) return null;
-
-    return (
-      <View style={styles.bioContainer}>
-        <Text style={styles.bioText}>{profile.bio || 'No bio yet'}</Text>
-      </View>
-    );
-  };
+  // Removed unused renderBio function
 
   const renderStats = () => {
     if (!stats) return null;
@@ -535,7 +529,7 @@ const ProfileScreen = () => {
           <ProfilePictureUpload
             userId={user.id}
             avatarUrl={profile.avatar_url}
-            onUploadComplete={(url) => handleProfileUpdate('avatar_url', url)}
+            onUploadComplete={(url: string) => handleProfileUpdate('avatar_url', url)}
           />
         </View>
 
@@ -543,7 +537,7 @@ const ProfileScreen = () => {
         <UsernameEdit
           userId={user.id}
           initialUsername={profile.username || ''}
-          onSave={(newUsername) => handleProfileUpdate('username', newUsername)}
+          onSave={(newUsername: string) => handleProfileUpdate('username', newUsername)}
         />
 
         {/* User ID Display */}
@@ -556,14 +550,14 @@ const ProfileScreen = () => {
         <ProfileBioEdit
           userId={user.id}
           initialBio={profile.bio || ''}
-          onSave={(newBio) => handleProfileUpdate('bio', newBio)}
+          onSave={(newBio: string) => handleProfileUpdate('bio', newBio)}
         />
 
         {/* Sport Preferences */}
         <SportPreferences
           userId={user.id}
-          initialPreferences={profile.sports_preferences || []}
-          onUpdate={(prefs) => handleProfileUpdate('sports_preferences', prefs)}
+          initialPreferences={(profile.sports_preferences as any) || []}
+          onUpdate={(prefs: any) => handleProfileUpdate('sports_preferences', prefs)}
         />
       </View>
     );
@@ -974,9 +968,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   // New styles for enhanced profile
-  contentContainer: {
-    padding: SPACING.md,
-  },
   userIdContainer: {
     flexDirection: 'row',
     alignItems: 'center',

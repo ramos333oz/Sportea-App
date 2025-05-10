@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { Card, Title, Paragraph, Text, Button, Chip, Avatar, ActivityIndicator } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
-import { COLORS, SPACING, BORDER_RADIUS } from '../constants/theme';
+import { COLORS, SPACING } from '../constants/theme';
 import { useAuth } from '../contexts/AuthContext';
 import realtimeService from '../services/realtimeService';
 

@@ -53,11 +53,14 @@ const TestRealtimeScreen = () => {
     try {
       const result = await createTestGame(user.id);
 
-      if (result.success && result.data) {
-        setTestGameId(result.data[0].id);
-        addLog(`Test game created with ID: ${result.data[0].id}`);
+      // Type assertion to handle the result object
+      const typedResult = result as { success?: boolean; data?: any[]; error?: string };
+
+      if (typedResult.success && typedResult.data) {
+        setTestGameId(typedResult.data[0].id);
+        addLog(`Test game created with ID: ${typedResult.data[0].id}`);
       } else {
-        addLog(`Failed to create test game: ${result.error}`);
+        addLog(`Failed to create test game: ${typedResult.error || 'Unknown error'}`);
       }
     } catch (error) {
       addLog(`Error creating test game: ${error}`);
@@ -79,10 +82,13 @@ const TestRealtimeScreen = () => {
     try {
       const result = await updateTestGame(testGameId);
 
-      if (result.success) {
+      // Type assertion to handle the result object
+      const typedResult = result as { success?: boolean; error?: string };
+
+      if (typedResult.success) {
         addLog(`Test game updated: ${testGameId}`);
       } else {
-        addLog(`Failed to update test game: ${result.error}`);
+        addLog(`Failed to update test game: ${typedResult.error || 'Unknown error'}`);
       }
     } catch (error) {
       addLog(`Error updating test game: ${error}`);
@@ -104,11 +110,14 @@ const TestRealtimeScreen = () => {
     try {
       const result = await deleteTestGame(testGameId);
 
-      if (result.success) {
+      // Type assertion to handle the result object
+      const typedResult = result as { success?: boolean; error?: string };
+
+      if (typedResult.success) {
         addLog(`Test game deleted: ${testGameId}`);
         setTestGameId(null);
       } else {
-        addLog(`Failed to delete test game: ${result.error}`);
+        addLog(`Failed to delete test game: ${typedResult.error || 'Unknown error'}`);
       }
     } catch (error) {
       addLog(`Error deleting test game: ${error}`);
