@@ -3,8 +3,13 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Platform } from 'react-native';
 import { Text, Avatar, Button, Card, FAB, Snackbar, Modal, Portal, Surface } from 'react-native-paper';
 =======
+
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Platform } from 'react-native';
+import { Text, Avatar, Button, Card, FAB, Snackbar, Modal, Portal, Surface } from 'react-native-paper';
+=======
 import { View, StyleSheet, ScrollView, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Text, Avatar, Button, Card, List, Divider, FAB, Snackbar, Modal, Portal } from 'react-native-paper';
+
 
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -19,10 +24,12 @@ import ProfileBioEdit from '../components/ProfileBioEdit';
 import SportPreferences from '../components/SportPreferences';
 import Achievements from '../components/Achievements';
 import UsernameEdit from '../components/UsernameEdit';
-=======
+
+
 import { getUserProfile, getUserStats, getUserGames } from '../utils/profileUtils';
 import { supabase } from '../services/supabase';
 import { TABLES } from '../constants/database';
+
 
 
 interface Sport {
@@ -130,7 +137,11 @@ const ProfileScreen = () => {
 
   const [activeTab, setActiveTab] = useState('profile');
 =======
+
+  const [activeTab, setActiveTab] = useState('profile');
+=======
   const [activeTab, setActiveTab] = useState('games');
+
 
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -143,9 +154,12 @@ const ProfileScreen = () => {
 
 
 =======
+
+=======
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   
+
 
   useEffect(() => {
     if (user) {
@@ -228,15 +242,18 @@ const ProfileScreen = () => {
       }
 
 
+
+
       if (gamesData && gamesData.all && Array.isArray(gamesData.all)) {
         console.log('Games loaded successfully');
         // Filter for upcoming games
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-=======
+
       
       if (gamesData) {
+
 
         const upcoming = gamesData.all
           .filter((game: any) => new Date(game.date) >= new Date())
@@ -250,13 +267,14 @@ const ProfileScreen = () => {
         const activity = [
           // Games hosted by user
           ...(gamesData.hosted || []).map((game: any) => ({
-=======
+
           .slice(0, 5);
         
         setUpcomingGames(upcoming);
         
         const activity = [
           ...gamesData.hosted.map((game: any) => ({
+
 
             id: `hosted-${game.id}`,
             type: 'hosted',
@@ -268,8 +286,13 @@ const ProfileScreen = () => {
 
           // Games joined by user
           ...(gamesData.joined || []).map((game: any) => ({
-=======
+
+
+          // Games joined by user
+          ...(gamesData.joined || []).map((game: any) => ({
+
           ...gamesData.joined.map((game: any) => ({
+
 
             id: `joined-${game.id}`,
             type: 'joined',
@@ -282,9 +305,10 @@ const ProfileScreen = () => {
         .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
         .slice(0, 10); // Get most recent 10 activities
 
-=======
+
         ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         
+
 
         setRecentActivity(activity);
       } else {
@@ -788,7 +812,6 @@ const ProfileScreen = () => {
         {activeTab === 'games' && renderUpcomingGames()}
         {activeTab === 'activity' && renderActivity()}
         {activeTab === 'achievements' && renderAchievements()}
-=======
 
       </ScrollView>
 
