@@ -42,4 +42,4 @@ export const PARTICIPANT_FIELDS = {
   USER_ID: 'user_id',
   STATUS: 'status',
   JOINED_AT: 'joined_at',
-};
+

@@ -5,47 +5,43 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../navigation/AuthNavigator';
 import { COLORS, SPACING, FONT_SIZES } from '../constants/theme';
-import { signIn } from '../services/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import SupabaseTest from '../components/SupabaseTest';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 // Placeholder image path - replace with actual logo later
 const logoPlaceholder = require('../../assets/images/logo-placeholder.png');
 
-type LoginScreenNavigationProp = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
+type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
-const LoginScreen = () => {
-  const navigation = useNavigation<LoginScreenNavigationProp>();
+export const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const { signIn } = useAuth();
 
   const handleLogin = async () => {
-    if (email.trim() === '' || password === '') {
-      setErrorMessage('Please enter both email and password');
-      return;
-    }
-
-    // Check if the email is from the university domain
-    if (!email.endsWith('@student.uitm.edu.my')) {
-      setErrorMessage('Please use your university student email');
+    if (!email || !password) {
+      setError('Please fill in all fields');
       return;
     }
 
     setLoading(true);
-    setErrorMessage('');
+    setError(null);
 
     try {
-      const { data, error } = await signIn(email, password);
-      
-      if (error) {
-        setErrorMessage(error.message);
-      } else if (!data?.user) {
-        setErrorMessage('Login failed. Please try again.');
+      const { success, error } = await signIn(email, password);
+      if (!success) {
+        throw new Error(error || 'Failed to sign in');
       }
-    } catch (error) {
-      setErrorMessage('An unexpected error occurred. Please try again.');
-      console.error(error);
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred');
+      }
     } finally {
       setLoading(false);
     }
@@ -65,74 +61,73 @@ const LoginScreen = () => {
         </View>
 
         <View style={styles.formContainer}>
-          <Text style={styles.welcomeText}>Welcome Back!</Text>
-          <Text style={styles.subtitle}>Sign in to your account</Text>
+          <Text style={styles.title}>
+            Welcome Back
+          </Text>
 
           <TextInput
-            style={styles.input}
-            label="University Email"
+            label="Email"
             value={email}
             onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            left={<TextInput.Icon icon="email" />}
             mode="outlined"
-            outlineColor={COLORS.border}
-            activeOutlineColor={COLORS.primary}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            style={styles.input}
           />
 
           <TextInput
-            style={styles.input}
             label="Password"
             value={password}
             onChangeText={setPassword}
+            mode="outlined"
             secureTextEntry={!showPassword}
-            left={<TextInput.Icon icon="lock" />}
             right={
               <TextInput.Icon
                 icon={showPassword ? 'eye-off' : 'eye'}
                 onPress={() => setShowPassword(!showPassword)}
               />
             }
-            mode="outlined"
-            outlineColor={COLORS.border}
-            activeOutlineColor={COLORS.primary}
+            style={styles.input}
           />
-
-          <TouchableOpacity
-            style={styles.forgotPassword}
-            onPress={() => navigation.navigate('ForgotPassword')}
-          >
-            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-          </TouchableOpacity>
 
           <Button
             mode="contained"
-            style={styles.loginButton}
-            labelStyle={styles.buttonLabel}
             onPress={handleLogin}
             loading={loading}
             disabled={loading}
+            style={styles.button}
           >
-            Log In
+            Sign In
           </Button>
 
-          <View style={styles.signupContainer}>
-            <Text style={styles.noAccountText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.signupText}>Sign Up</Text>
-            </TouchableOpacity>
-          </View>
+          <Button
+            mode="text"
+            onPress={() => navigation.navigate('Register')}
+            style={styles.linkButton}
+          >
+            Don't have an account? Sign up
+          </Button>
+
+          <Button
+            mode="text"
+            onPress={() => navigation.navigate('ForgotPassword')}
+            style={styles.linkButton}
+          >
+            Forgot Password?
+          </Button>
         </View>
+
+        {/* Supabase connection test */}
+        <SupabaseTest />
       </ScrollView>
 
       <Snackbar
-        visible={!!errorMessage}
-        onDismiss={() => setErrorMessage('')}
+        visible={!!error}
+        onDismiss={() => setError(null)}
         duration={3000}
         style={styles.snackbar}
       >
-        {errorMessage}
+        {error}
       </Snackbar>
     </KeyboardAvoidingView>
   );
@@ -145,7 +140,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: SPACING.xl,
+    justifyContent: 'center',
   },
   logoContainer: {
     alignItems: 'center',
@@ -158,7 +153,7 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
   appName: {
-    fontSize: FONT_SIZES.heading,
+    fontSize: FONT_SIZES.xxxl,
     fontWeight: 'bold',
     color: COLORS.primary,
     marginTop: SPACING.sm,
@@ -169,57 +164,28 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
   },
   formContainer: {
-    paddingHorizontal: SPACING.xl,
+    padding: SPACING.lg,
   },
-  welcomeText: {
+  title: {
     fontSize: FONT_SIZES.xxl,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-  },
-  subtitle: {
-    fontSize: FONT_SIZES.lg,
-    color: COLORS.disabled,
     marginBottom: SPACING.xl,
+    textAlign: 'center',
+    color: COLORS.primary,
+    fontWeight: 'bold',
   },
   input: {
     marginBottom: SPACING.md,
-    backgroundColor: COLORS.background,
   },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginBottom: SPACING.lg,
-  },
-  forgotPasswordText: {
-    color: COLORS.primary,
-    fontSize: FONT_SIZES.md,
-  },
-  loginButton: {
-    paddingVertical: SPACING.xs,
-    backgroundColor: COLORS.primary,
-  },
-  buttonLabel: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
+  button: {
+    marginTop: SPACING.md,
     paddingVertical: SPACING.xs,
   },
-  signupContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: SPACING.lg,
-  },
-  noAccountText: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text,
-  },
-  signupText: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.primary,
-    fontWeight: 'bold',
+  linkButton: {
+    marginTop: SPACING.sm,
   },
   snackbar: {
     backgroundColor: COLORS.error,
   },
 });
 
-export default LoginScreen; 
+export default LoginScreen;
