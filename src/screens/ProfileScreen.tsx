@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Text, Avatar, Button, Card, List, Divider, FAB, Snackbar, Modal, Portal } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Platform } from 'react-native';
+import { Text, Avatar, Button, Card, FAB, Snackbar, Modal, Portal, Surface } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../constants/theme';
-import { getUserProfile, getUserStats, getUserGames } from '../utils/profileUtils';
-import { supabase } from '../services/supabase';
-import { TABLES } from '../constants/database';
+import { getUserProfile, getUserStats, getUserGames, updateUserProfile } from '../utils/profileUtils';
+
+// Import our new components
+import ProfilePictureUpload from '../components/ProfilePictureUpload';
+import ProfileBioEdit from '../components/ProfileBioEdit';
+import SportPreferences from '../components/SportPreferences';
+import Achievements from '../components/Achievements';
+import UsernameEdit from '../components/UsernameEdit';
 
 interface Sport {
   id: string;
@@ -111,15 +116,16 @@ const mockRecentActivity = [
 const ProfileScreen = () => {
   const navigation = useNavigation();
   const { user, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState('games');
+  const [activeTab, setActiveTab] = useState('profile');
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [upcomingGames, setUpcomingGames] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [showSettings, setShowSettings] = useState(false);
-  
+
   useEffect(() => {
     if (user) {
       loadUserData();
@@ -133,64 +139,99 @@ const ProfileScreen = () => {
   }, [user]);
 
   const loadUserData = async () => {
-    setIsLoading(true);
+    if (!refreshing) setIsLoading(true);
     setError('');
-    
+
     try {
+      if (!user || !user.id) {
+        throw new Error('User not found');
+      }
+
+      console.log('Loading data for user:', user.id);
+
       // Get user profile
       const { data: profileData, error: profileError } = await getUserProfile(user.id);
-      
+
       if (profileError) {
-        throw profileError;
+        console.error('Profile error:', profileError);
+        // Don't throw here, continue to load other data
       }
-      
+
       if (profileData) {
+        console.log('Profile loaded successfully');
         setProfile(profileData);
+      } else {
+        console.warn('No profile data returned');
+        // Create a default profile if none exists
+        setProfile({
+          id: user.id,
+          username: user.email ? user.email.split('@')[0] : 'user',
+          avatar_url: undefined,
+          bio: '',
+          sports_preferences: [],
+          full_name: '',
+          // Add any other required fields from UserProfile type
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        } as any);
       }
-      
+
       // Get user stats
       const { data: statsData, error: statsError } = await getUserStats(user.id);
-      
+
       if (statsError) {
-        throw statsError;
+        console.error('Stats error:', statsError);
+        // Don't throw here, continue to load other data
       }
-      
+
       if (statsData) {
+        console.log('Stats loaded successfully');
         setStats(statsData);
+      } else {
+        console.warn('No stats data returned');
+        // Set default stats
+        setStats({
+          gamesPlayed: 0,
+          gamesHosted: 0,
+          sportsPlayed: [],
+          upcomingGames: 0
+        });
       }
-      
+
       // Get user games
       const { data: gamesData, error: gamesError } = await getUserGames(user.id);
-      
+
       if (gamesError) {
-        throw gamesError;
+        console.error('Games error:', gamesError);
+        // Don't throw here, continue processing
       }
-      
-      if (gamesData) {
+
+      if (gamesData && gamesData.all && Array.isArray(gamesData.all)) {
+        console.log('Games loaded successfully');
         // Filter for upcoming games
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        
+
         const upcoming = gamesData.all
           .filter((game: any) => new Date(game.date) >= today)
           .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
           .slice(0, 5); // Get only the nearest 5 games
-        
+
         setUpcomingGames(upcoming);
-        
+
         // Create activity from games
         const activity = [
           // Games hosted by user
-          ...gamesData.hosted.map((game: any) => ({
+          ...(gamesData.hosted || []).map((game: any) => ({
             id: `hosted-${game.id}`,
             type: 'hosted',
             gameTitle: game.title,
             timestamp: game.created_at,
             gameId: game.id
           })),
-          
+
           // Games joined by user
-          ...gamesData.joined.map((game: any) => ({
+          ...(gamesData.joined || []).map((game: any) => ({
             id: `joined-${game.id}`,
             type: 'joined',
             gameTitle: game.title,
@@ -200,29 +241,57 @@ const ProfileScreen = () => {
         ]
         .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
         .slice(0, 10); // Get most recent 10 activities
-        
+
         setRecentActivity(activity);
+      } else {
+        console.warn('No games data returned or invalid format');
+        setUpcomingGames([]);
+        setRecentActivity([]);
       }
     } catch (err: any) {
       console.error('Error loading user data:', err);
       setError(err.message || 'Failed to load user data');
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
   };
-  
+
+  // Handle refresh
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadUserData();
+  };
+
+  // Handle profile updates
+  const handleProfileUpdate = (field: string, value: any) => {
+    if (!profile || !user) return;
+
+    // Update local state immediately for better UX
+    setProfile(prev => prev ? { ...prev, [field]: value } : null);
+
+    // Update profile in database
+    updateUserProfile(user.id, { [field]: value })
+      .catch(err => {
+        console.error(`Error updating ${field}:`, err);
+        setError(`Failed to update ${field}. Please try again.`);
+        // Revert to previous value on error
+        loadUserData();
+      });
+  };
+
   // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      weekday: 'short', 
-      month: 'short', 
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
       day: 'numeric',
       hour: 'numeric',
       minute: '2-digit'
     });
   };
-  
+
   // Display relative time (e.g., "2 days ago")
   const getRelativeTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -231,7 +300,7 @@ const ProfileScreen = () => {
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffMinutes = Math.floor(diffMs / (1000 * 60));
-    
+
     if (diffDays > 0) {
       return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
     } else if (diffHours > 0) {
@@ -240,26 +309,46 @@ const ProfileScreen = () => {
       return `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`;
     }
   };
-  
+
   const renderProfileHeader = () => {
     if (!profile) return null;
-    
+
     const displayName = profile.full_name || profile.username || 'User';
     const displayUsername = profile.username ? `@${profile.username}` : '';
-    
+
     return (
       <View style={styles.profileHeader}>
         <View style={styles.profileImageContainer}>
-          <Avatar.Image 
-            source={{ uri: profile.avatar_url || 'https://via.placeholder.com/150' }} 
-            size={100} 
+          <Avatar.Image
+            source={{ uri: profile.avatar_url || `https://ui-avatars.com/api/?name=${profile.username || user?.id?.substring(0, 8) || 'User'}&background=random&color=fff&size=100` }}
+            size={100}
             style={styles.profileImage}
           />
-          <TouchableOpacity style={styles.editProfileImageButton}>
+          <TouchableOpacity
+            style={styles.editProfileImageButton}
+            onPress={() => {
+              setActiveTab('profile');
+              // Create a small delay to ensure the tab has changed before showing the image picker
+              setTimeout(() => {
+                // Find the ProfilePictureUpload component and trigger its pickImage method
+                if (profile && user) {
+                  // For web platforms
+                  if (Platform.OS === 'web' && typeof document !== 'undefined') {
+                    const event = new CustomEvent('pickProfileImage');
+                    document.dispatchEvent(event);
+                  }
+                  // For non-web platforms
+                  else if (typeof global !== 'undefined' && (global as any).pickProfileImage) {
+                    (global as any).pickProfileImage();
+                  }
+                }
+              }, 100);
+            }}
+          >
             <MaterialCommunityIcons name="camera" size={16} color={COLORS.background} />
           </TouchableOpacity>
         </View>
-        
+
         <View style={styles.profileInfo}>
           <Text style={styles.name}>{displayName}</Text>
           <Text style={styles.username}>{displayUsername}</Text>
@@ -269,7 +358,7 @@ const ProfileScreen = () => {
               <Text style={styles.location}>{profile.location}</Text>
             </View>
           )}
-          
+
           <View style={styles.followContainer}>
             <View style={styles.followItem}>
               <Text style={styles.followCount}>{profile.followers_count || 0}</Text>
@@ -284,20 +373,12 @@ const ProfileScreen = () => {
       </View>
     );
   };
-  
-  const renderBio = () => {
-    if (!profile) return null;
-    
-    return (
-      <View style={styles.bioContainer}>
-        <Text style={styles.bioText}>{profile.bio || 'No bio yet'}</Text>
-      </View>
-    );
-  };
-  
+
+  // Removed unused renderBio function
+
   const renderStats = () => {
     if (!stats) return null;
-    
+
     return (
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
@@ -317,30 +398,36 @@ const ProfileScreen = () => {
       </View>
     );
   };
-  
+
   const renderTabSelector = () => (
     <View style={styles.tabContainer}>
-      <TouchableOpacity 
+      <TouchableOpacity
+        style={[styles.tab, activeTab === 'profile' && styles.activeTab]}
+        onPress={() => setActiveTab('profile')}
+      >
+        <Text style={[styles.tabText, activeTab === 'profile' && styles.activeTabText]}>Profile</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
         style={[styles.tab, activeTab === 'games' && styles.activeTab]}
         onPress={() => setActiveTab('games')}
       >
-        <Text style={[styles.tabText, activeTab === 'games' && styles.activeTabText]}>Upcoming Games</Text>
+        <Text style={[styles.tabText, activeTab === 'games' && styles.activeTabText]}>Games</Text>
       </TouchableOpacity>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[styles.tab, activeTab === 'activity' && styles.activeTab]}
         onPress={() => setActiveTab('activity')}
       >
         <Text style={[styles.tabText, activeTab === 'activity' && styles.activeTabText]}>Activity</Text>
       </TouchableOpacity>
-      <TouchableOpacity 
-        style={[styles.tab, activeTab === 'preferences' && styles.activeTab]}
-        onPress={() => setActiveTab('preferences')}
+      <TouchableOpacity
+        style={[styles.tab, activeTab === 'achievements' && styles.activeTab]}
+        onPress={() => setActiveTab('achievements')}
       >
-        <Text style={[styles.tabText, activeTab === 'preferences' && styles.activeTabText]}>Preferences</Text>
+        <Text style={[styles.tabText, activeTab === 'achievements' && styles.activeTabText]}>Achievements</Text>
       </TouchableOpacity>
     </View>
   );
-  
+
   const renderUpcomingGames = () => (
     <View style={styles.contentContainer}>
       {upcomingGames.length > 0 ? (
@@ -363,9 +450,9 @@ const ProfileScreen = () => {
                 <Text style={styles.playersText}>
                   {game.participants}/{game.totalSpots} players
                 </Text>
-                <Button 
-                  mode="text" 
-                  compact 
+                <Button
+                  mode="text"
+                  compact
                   onPress={() => console.log('View game details')}
                 >
                   View Details
@@ -378,8 +465,8 @@ const ProfileScreen = () => {
         <View style={styles.emptyState}>
           <MaterialCommunityIcons name="calendar-blank" size={40} color={COLORS.disabled} />
           <Text style={styles.emptyStateText}>No upcoming games</Text>
-          <Button 
-            mode="contained" 
+          <Button
+            mode="contained"
             style={styles.emptyStateButton}
             onPress={() => navigation.navigate('FindGames' as never)}
           >
@@ -389,7 +476,7 @@ const ProfileScreen = () => {
       )}
     </View>
   );
-  
+
   const renderActivity = () => (
     <View style={styles.contentContainer}>
       {recentActivity.length > 0 ? (
@@ -425,40 +512,64 @@ const ProfileScreen = () => {
       )}
     </View>
   );
-  
-  const renderPreferences = () => (
-    <View style={styles.contentContainer}>
-      <Card style={styles.preferencesCard}>
-        <Card.Content>
-          <Text style={styles.preferencesTitle}>Preferred Sports</Text>
-          <View style={styles.preferencesChipsContainer}>
-            {profile.sports_preferences?.map(sport => (
-              <View key={sport.id} style={styles.preferencesChip}>
-                <Text style={styles.preferencesChipText}>{sport.name}</Text>
-                <Text style={styles.skillLevelText}>
-                  {profile.stats?.sportsPlayed.find(s => s.name === sport.name)?.count || 0}
-                </Text>
-              </View>
-            ))}
-          </View>
-          
-          <Divider style={styles.preferenceDivider} />
-          
-          <Text style={styles.preferencesTitle}>Availability</Text>
-          <Text style={styles.preferencesText}>{profile.preferences?.availability}</Text>
-        </Card.Content>
-      </Card>
-      
-      <Button 
-        mode="outlined" 
-        style={styles.editPreferencesButton}
-        onPress={() => console.log('Edit preferences')}
-      >
-        Edit Preferences
-      </Button>
-    </View>
-  );
-  
+
+  const renderProfileContent = () => {
+    if (!profile || !user) return null;
+
+    // Log profile data for debugging
+    console.log('Profile data:', JSON.stringify(profile, null, 2));
+
+    return (
+      <View style={styles.contentContainer}>
+        {/* Profile Picture Upload - Hidden but accessible for the camera button */}
+        <View style={{ height: 0, overflow: 'hidden' }}>
+          <ProfilePictureUpload
+            userId={user.id}
+            avatarUrl={profile.avatar_url}
+            onUploadComplete={(url: string) => handleProfileUpdate('avatar_url', url)}
+          />
+        </View>
+
+        {/* Username Edit */}
+        <UsernameEdit
+          userId={user.id}
+          initialUsername={profile.username || ''}
+          onSave={(newUsername: string) => handleProfileUpdate('username', newUsername)}
+        />
+
+        {/* User ID Display */}
+        <Surface style={styles.userIdContainer}>
+          <Text style={styles.userIdLabel}>User ID:</Text>
+          <Text style={styles.userId}>{user.id}</Text>
+        </Surface>
+
+        {/* Bio Section */}
+        <ProfileBioEdit
+          userId={user.id}
+          initialBio={profile.bio || ''}
+          onSave={(newBio: string) => handleProfileUpdate('bio', newBio)}
+        />
+
+        {/* Sport Preferences */}
+        <SportPreferences
+          userId={user.id}
+          initialPreferences={(profile.sports_preferences as any) || []}
+          onUpdate={(prefs: any) => handleProfileUpdate('sports_preferences', prefs)}
+        />
+      </View>
+    );
+  };
+
+  const renderAchievements = () => {
+    if (!stats) return null;
+
+    return (
+      <View style={styles.contentContainer}>
+        <Achievements stats={stats} />
+      </View>
+    );
+  };
+
   const handleLogout = async () => {
     try {
       const { success, error } = await signOut();
@@ -497,7 +608,7 @@ const ProfileScreen = () => {
       </Modal>
     </Portal>
   );
-  
+
   if (isLoading) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
@@ -506,29 +617,38 @@ const ProfileScreen = () => {
       </View>
     );
   }
-  
+
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[COLORS.primary]}
+          />
+        }
+      >
         {renderProfileHeader()}
-        {renderBio()}
         {renderStats()}
         {renderTabSelector()}
-        
+
+        {activeTab === 'profile' && renderProfileContent()}
         {activeTab === 'games' && renderUpcomingGames()}
         {activeTab === 'activity' && renderActivity()}
-        {activeTab === 'preferences' && renderPreferences()}
+        {activeTab === 'achievements' && renderAchievements()}
       </ScrollView>
-      
+
       <FAB
         style={styles.fab}
         icon="cog"
         color={COLORS.background}
         onPress={() => setShowSettings(true)}
       />
-      
+
       {renderSettingsModal()}
-      
+
       <Snackbar
         visible={!!error}
         onDismiss={() => setError('')}
@@ -844,6 +964,27 @@ const styles = StyleSheet.create({
   cancelButton: {
     borderColor: COLORS.border,
   },
+  // New styles for enhanced profile
+  userIdContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SPACING.md,
+    marginVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.background,
+    elevation: 1,
+  },
+  userIdLabel: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginRight: SPACING.sm,
+  },
+  userId: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.disabled,
+    flex: 1,
+  },
 });
 
-export default ProfileScreen; 
+export default ProfileScreen;
